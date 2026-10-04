@@ -20,6 +20,7 @@ RUN mkdir /otel \
     && wget -q -O /otel/opentelemetry-javaagent.jar \
        "https://repo1.maven.org/maven2/io/opentelemetry/javaagent/opentelemetry-javaagent/${OTEL_AGENT_VERSION}/opentelemetry-javaagent-${OTEL_AGENT_VERSION}.jar" \
     && echo "${OTEL_AGENT_SHA256}  /otel/opentelemetry-javaagent.jar" | sha256sum -c -
-COPY --from=builder /app/target/backend-service.jar app.jar
-EXPOSE 8000
+COPY --from=builder /app/target/submission-service.jar app.jar
+# 8000 = API (behind the gateway) and the sandboxes' heartbeat, 8081 = actuator (health, prometheus)
+EXPOSE 8000 8081
 ENTRYPOINT ["java", "-jar", "app.jar"]

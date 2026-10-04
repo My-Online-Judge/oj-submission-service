@@ -9,10 +9,10 @@
 		<relativePath/> <!-- lookup parent from repository -->
 	</parent>
 	<groupId>vn.thanhtuanle</groupId>
-	<artifactId>backend-service</artifactId>
+	<artifactId>oj-submission-service</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
-	<name>backend-service</name>
-	<description>Backend Service</description>
+	<name>oj-submission-service</name>
+	<description>Submission service: submissions, judging dispatch, verdicts, languages, judge servers</description>
 	<url/>
 	<licenses>
 		<license/>
@@ -277,7 +277,7 @@
 				</configuration>
 			</plugin>
 		</plugins>
-		<finalName>backend-service</finalName>
+		<finalName>submission-service</finalName>
 	</build>
 
 </project>

@@ -17,6 +17,12 @@ spring:
 server:
   port: 8000
 
+management:
+  server:
+    # Actuator (health, prometheus) on its own port, like the other services: Prometheus scrapes it inside
+    # oj-net; 8000 serves only the API and the sandboxes' heartbeat. The test profile keeps it on the main port.
+    port: 8081
+
 judge:
   server:
     token: ${JUDGE_SERVER_TOKEN}
@@ -28,9 +34,9 @@ springdoc:
     enabled: true
 openapi:
   service:
-    api-docs: oj-api-service
+    api-docs: submission-service
     server: http://localhost:${server.port}
-    title: OJ API service
+    title: Submission service
     version: 1.0.0
 
 logging:

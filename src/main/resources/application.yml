@@ -3,10 +3,10 @@ server:
 
 spring:
   application:
-    # The service is submission-service since sub-project 3a (the repo and artifact follow in 3b).
+    # The remainder of the judge-api monolith, its own service and repo since sub-project 3.
     name: submission-service
   # Serialize any Instant/Date/Calendar JSON in Vietnam time (GMT+7). LocalDateTime fields are naive
-  # and unaffected by this — those are pinned via TimeZone.setDefault in BackendServiceApplication.main.
+  # and unaffected by this — those are pinned via TimeZone.setDefault in SubmissionServiceApplication.main.
   jackson:
     time-zone: Asia/Ho_Chi_Minh
   profiles:

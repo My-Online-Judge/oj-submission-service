@@ -24,9 +24,9 @@ springdoc:
     enabled: true
 openapi:
   service:
-    api-docs: backend-service
+    api-docs: submission-service
     server: ${BACKEND_SERVICE:http://localhost:${server.port}}
-    title: Backend service
+    title: Submission service
     version: 1.0.0
 oj:
   problems:

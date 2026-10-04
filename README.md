@@ -1,73 +1,31 @@
-# Judge API Service
+# oj-submission-service
 
-Backend API service for the Online Judge system. This service manages submissions, languages and judge servers, and integrates with the judging engine. Problems and their test cases live in oj-problem-service, which it calls over gRPC (`ProblemCatalog`); users and tokens live in oj-identity-service.
+Submissions for My Online Judge: accepting a submission (cooldown, the problem's judge spec over gRPC from
+problem-service), dispatching it to the judge workers (`submission.requested`, through a transactional outbox),
+recording verdicts (`submission.judged`, consumer group `judge-api-results`), streaming them to the browser
+(SSE, fanned out over Redis), the reconcile job for stuck submissions, the language list and the judge-server
+registry. It is what remained of the judge-api monolith; this repo carries judge-api's history, and became a
+service of its own with its own database in sub-project 3b.
 
-## 🛠 Tech Stack
+| Port | Purpose |
+|---|---|
+| 8000 | API — the api-gateway routes `/api/v1/{submissions,languages,judge-servers}/**` here; the sandboxes post their heartbeat to `/api/judge_server_heartbeat` |
+| 8081 | actuator: `/actuator/health`, `/actuator/prometheus` (dev/prod profiles) |
 
-- **Java**: 17
-- **Framework**: Spring Boot 3.4.1
-- **Database**: PostgreSQL
-- **Build Tool**: Maven 3.5+
-- **Documentation**: SpringDoc OpenAPI (Swagger UI)
-- **Utilities**: Lombok, MapStruct
+Configuration comes from `judge-deployment/.env.submission` (see `.env.submission.example` there): its own
+Postgres (`submission-db`, schema by Flyway `V1` = the live tables, `V2` = the languages), plus Kafka, Redis, the
+judge-server token, problem-service's gRPC address and service token, and the JWKS URI through the compose file.
 
-## 🚀 Prerequisites
+Events: `submission.requested` (to the workers) and `oj.submission.events` (`SubmissionVerdictRecorded`, to
+problem-service's statistics) leave through `t_outbox`; alert `OutboxBacklogStale` fires when a row waits over a
+minute.
 
-Ensure you have the following installed:
+## Build and test
 
-- [JDK 17+](https://www.oracle.com/java/technologies/downloads/)
-- [Maven 3.5+](https://maven.apache.org/download.cgi)
-- [Docker & Docker Compose](https://docs.docker.com/get-docker/) (Optional, for running dependencies or full stack)
+`oj-common` must be installed first (`./mvnw install` in the sibling `oj-common` repo). Use `./mvnw`
+(Maven 3.9.9): oj-common's protobuf plugin needs Maven 3.9.6 or later.
 
-## ⚙️ Build & Run
+    ./mvnw verify '-Djunit.jupiter.conditions.deactivate=org.testcontainers.*'
 
-### 1. Using Maven Wrapper (Recommended)
-
-Run the application with the default `dev` profile:
-
-```bash
-./mvnw spring-boot:run
-```
-
-### 2. Using Java Jar
-
-Package the application first:
-
-```bash
-./mvnw clean package -P dev
-```
-
-Run the generated jar:
-
-```bash
-java -jar target/backend-service.jar
-```
-
-### 3. Using Docker
-
-Build the image:
-
-```bash
-docker build -t backend-service .
-```
-
-Run the container:
-
-```bash
-docker run -d -p 8080:8080 backend-service:latest
-```
-
-## 📚 API Documentation
-
-Once the application is running, API documentation is available at:
-
-- Swagger UI: `http://localhost:8080/swagger-ui/index.html`
-- OpenAPI Spec: `http://localhost:8080/v3/api-docs`
-
-## 🧪 Testing
-
-Run unit and integration tests:
-
-```bash
-./mvnw clean test
-```
+Docker builds compile `oj-common` from the named build context:
+`docker build --build-context oj-common=../oj-common .`

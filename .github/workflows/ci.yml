@@ -1,47 +1,28 @@
-name: Backend PR CI/CD
+name: CI
 
 on:
   pull_request:
-    types: [opened, reopened, synchronize]
-    branches: [main, "feature/**"]
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
 env:
-  dockerhub-repo-name: judge-api
-  # oj-common is not published to a Maven repository yet. Each job checks this tag out next to the
+  # oj-common is not published to a Maven repository yet. The job checks this tag out next to the
   # service (the same sibling layout the Dockerfile and judge-deployment use) and installs it.
   oj-common-ref: v0.3.0
 
-permissions:
-  contents: read
-  packages: write
-
 jobs:
-  test-and-lint:
+  verify:
     runs-on: ubuntu-latest
-    name: Test & Lint
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-          POSTGRES_DB: my_oj
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
     defaults:
       run:
-        working-directory: judge-api
+        working-directory: oj-submission-service
     steps:
       - uses: actions/checkout@v4
         with:
-          path: judge-api
+          path: oj-submission-service
 
       - name: Check out oj-common
         uses: actions/checkout@v4
@@ -54,57 +35,16 @@ jobs:
         uses: actions/setup-java@v4
         with:
           java-version: "17"
-          distribution: "temurin"
+          distribution: temurin
           cache: maven
 
       - name: Install oj-common
-        run: mvn -B -f ../oj-common/pom.xml install -DskipTests
+        run: ./mvnw -B -f ../oj-common/pom.xml install -DskipTests
 
-      - name: Load .env file from secrets
-        run: |
-          echo "${{ secrets.APP_ENV_FILE }}" > .env
-          cat .env | grep -v '^#' >> $GITHUB_ENV
+      - name: Test
+        # Postgres (and the schema-drift guards) run through Testcontainers. Deactivating their execution condition turns
+        # "Docker unavailable on the runner" into a failure instead of a silent skip.
+        run: ./mvnw -B verify '-Djunit.jupiter.conditions.deactivate=org.testcontainers.*'
 
-      - name: Build and Test with Maven
-        # Deactivating the Testcontainers execution condition turns "Docker unavailable on
-        # the runner" into a hard test failure instead of a silent skip — the schema-drift
-        # regression guard (SubmissionErrorMessageColumnTest) must actually run in CI.
-        # Locally the condition stays active, so devs without Docker still get a clean skip.
-        run: mvn clean verify '-Djunit.jupiter.conditions.deactivate=org.testcontainers.*'
-
-  build-and-push:
-    needs: test-and-lint
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    name: Build & Push Docker Image
-    steps:
-      # The Dockerfile compiles both oj-common and the service itself, so this job needs no JDK.
-      - uses: actions/checkout@v4
-        with:
-          path: judge-api
-
-      - name: Check out oj-common
-        uses: actions/checkout@v4
-        with:
-          repository: My-Online-Judge/oj-common
-          ref: ${{ env.oj-common-ref }}
-          path: oj-common
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: judge-api
-          build-contexts: oj-common=oj-common
-          push: true
-          tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.dockerhub-repo-name }}:latest
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.dockerhub-repo-name }}:${{ github.sha }}
+      - name: Build image
+        run: docker build --build-context oj-common=../oj-common -t submission-service:ci .

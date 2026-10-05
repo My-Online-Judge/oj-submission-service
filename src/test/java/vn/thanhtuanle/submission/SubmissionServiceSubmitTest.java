@@ -21,11 +21,13 @@ import vn.thanhtuanle.submission.dto.SubmissionRequestDto;
 import vn.thanhtuanle.submission.dto.SubmissionResponseDto;
 import vn.thanhtuanle.submission.mapper.SubmissionMapper;
 import vn.thanhtuanle.oj.common.security.CurrentUser;
+import vn.thanhtuanle.oj.common.web.error.ResourceNotFoundException;
 
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -82,5 +84,21 @@ class SubmissionServiceSubmitTest {
         assertThat(saved.getValue().getProblemSlug()).isEqualTo("a-plus-b");
         verify(outboxWriter).append("submission.requested", "x", event);
         assertThat(dto.getStatus()).isEqualTo(SubmissionResult.PENDING.getValue());
+    }
+
+    @Test
+    void submit_inADisabledLanguage_isNotFound_andNeverReachesTheJudge() {
+        SubmissionRequestDto req = SubmissionRequestDto.builder()
+                .sourceCode("console.log(1)").languageIdentifier("javascript")
+                .problemSlug("a-plus-b").shareSubmission(false).build();
+        Language disabled = new Language();
+        disabled.setDisabled(true);
+
+        when(problemCatalog.judgeSpec("a-plus-b"))
+                .thenReturn(new JudgeSpec(UUID.randomUUID(), "a-plus-b", 1000, 256L, "abc123def456"));
+        when(languageRepository.findByIdentifier("javascript")).thenReturn(Optional.of(disabled));
+
+        assertThatThrownBy(() -> submissionService.submit(req)).isInstanceOf(ResourceNotFoundException.class);
+        verifyNoInteractions(submissionRateLimiter, submissionRepository, outboxWriter);
     }
 }

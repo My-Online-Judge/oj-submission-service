@@ -17,9 +17,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * submission-db is built by Flyway alone: V1 (the four live tables) + V2 (the languages). The context starting at
- * all proves Hibernate's ddl-auto=validate accepts them for every entity; the assertions pin what the monolith's
- * migration tests used to guard (a required problem_slug, an error_message that holds a compiler's full output).
+ * submission-db is built by Flyway alone: V1 (the four live tables) + V2 (the languages) + V3 (what the sandbox can
+ * judge of them). The context starting at all proves Hibernate's ddl-auto=validate accepts them for every entity; the
+ * assertions pin what the monolith's migration tests used to guard (a required problem_slug, an error_message that
+ * holds a compiler's full output).
  */
 @SpringBootTest
 @ActiveProfiles("test")
@@ -55,7 +56,7 @@ class SubmissionSchemaTest {
     @Test
     void submissionDbHoldsTheFourSubmissionTablesAndTheLanguages() {
         assertThat(jdbc.queryForList("SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank",
-                String.class)).containsExactly("1", "2");
+                String.class)).containsExactly("1", "2", "3");
         assertThat(jdbc.queryForList("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' "
                 + "ORDER BY table_name", String.class))
                 .containsExactly("flyway_schema_history", "t_judge_servers", "t_languages", "t_outbox", "t_submissions");
@@ -70,5 +71,15 @@ class SubmissionSchemaTest {
                 Integer.class)).isEqualTo(5_000);
         assertThatThrownBy(() -> insertSubmission(null, null))
                 .hasMessageContaining("problem_slug");
+    }
+
+    @Test
+    void onlyLanguagesTheSandboxCanJudgeAreOffered_withLimitsTheyCompileWithin() {
+        assertThat(jdbc.queryForList("SELECT identifier FROM t_languages WHERE NOT is_disabled ORDER BY identifier",
+                String.class)).containsExactly("c", "cpp", "go", "java", "python2", "python3");
+        assertThat(jdbc.queryForMap("SELECT seccomp_rule, compile_max_memory FROM t_languages WHERE identifier = 'cpp'"))
+                .containsEntry("seccomp_rule", "c_cpp").containsEntry("compile_max_memory", 1073741824L);
+        assertThat(jdbc.queryForObject("SELECT compile_max_memory FROM t_languages WHERE identifier = 'go'", Long.class))
+                .isEqualTo(-1L);
     }
 }

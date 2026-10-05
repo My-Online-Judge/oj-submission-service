@@ -6,6 +6,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.List;
+
 @Data
 @Builder
 @NoArgsConstructor
@@ -28,4 +30,7 @@ public class JudgeCompileConfigDto {
 
     @JsonProperty("compile_command")
     private String compileCommand;
+
+    /** The compiler's environment; judge-server appends PATH, and sets nothing else (no HOME). */
+    private List<String> env;
 }

@@ -60,6 +60,7 @@ public class SubmissionService {
         // that cannot be judged burns the cooldown below.
         JudgeSpec spec = problemCatalog.judgeSpec(req.getProblemSlug());
         Language language = languageRepository.findByIdentifier(req.getLanguageIdentifier())
+                .filter(l -> !l.isDisabled())
                 .orElseThrow(() -> new ResourceNotFoundException("Language not found"));
         UUID userId = currentUser.id();
 

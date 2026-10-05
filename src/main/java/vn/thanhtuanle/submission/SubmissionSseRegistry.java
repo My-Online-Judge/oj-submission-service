@@ -32,6 +32,11 @@ public class SubmissionSseRegistry {
         return emitter;
     }
 
+    /** Whether this instance holds an SSE subscriber for the submission. */
+    public boolean holds(String submissionId) {
+        return emitters.containsKey(submissionId);
+    }
+
     public void complete(String submissionId, SubmissionResponseDto payload) {
         SseEmitter emitter = emitters.remove(submissionId);
         if (emitter == null) {

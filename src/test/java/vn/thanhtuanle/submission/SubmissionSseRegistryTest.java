@@ -30,4 +30,16 @@ class SubmissionSseRegistryTest {
         assertThatCode(() -> registry.complete("nope",
                 SubmissionResponseDto.builder().status(0).build())).doesNotThrowAnyException();
     }
+
+    @Test
+    void holdsOnlyALiveSubscriber() {
+        SubmissionSseRegistry registry = new SubmissionSseRegistry();
+        assertThat(registry.holds("sub-1")).isFalse();
+
+        registry.subscribe("sub-1");
+        assertThat(registry.holds("sub-1")).isTrue();
+
+        registry.complete("sub-1", SubmissionResponseDto.builder().status(0).build());
+        assertThat(registry.holds("sub-1")).isFalse();
+    }
 }

@@ -13,10 +13,7 @@ import vn.thanhtuanle.common.enums.SubmissionResult;
 import vn.thanhtuanle.entity.Submission;
 import vn.thanhtuanle.messaging.event.SubmissionJudgedEvent;
 import vn.thanhtuanle.metrics.OjMetrics;
-import vn.thanhtuanle.submission.SubmissionDetailAssembler;
 import vn.thanhtuanle.submission.SubmissionRepository;
-import vn.thanhtuanle.submission.dto.SubmissionResponseDto;
-import vn.thanhtuanle.submission.mapper.SubmissionMapper;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -31,9 +28,7 @@ class JudgeResultConsumerTest {
 
     @Mock SubmissionRepository submissionRepository;
     @Mock VerdictPubSub verdictPubSub;
-    @Mock SubmissionMapper submissionMapper;
     @Mock OjMetrics ojMetrics;
-    @Mock SubmissionDetailAssembler detailAssembler;
     @Mock OutboxWriter outboxWriter;
     @InjectMocks JudgeResultConsumer consumer;
 
@@ -51,9 +46,6 @@ class JudgeResultConsumerTest {
         UUID id = UUID.randomUUID();
         Submission s = pending(id);
         when(submissionRepository.findById(id)).thenReturn(Optional.of(s));
-        SubmissionResponseDto dto = SubmissionResponseDto.builder()
-                .status(SubmissionResult.ACCEPTED.getValue()).build();
-        when(submissionMapper.toDto(eq(s), any())).thenReturn(dto);
 
         SubmissionJudgedEvent e = SubmissionJudgedEvent.builder()
                 .submissionId(id.toString()).status(SubmissionResult.ACCEPTED.getValue())
@@ -68,7 +60,7 @@ class JudgeResultConsumerTest {
         verify(submissionRepository).save(s);
         // Routed through the after-commit entry point; with no active transaction it
         // degenerates to an immediate publish (see VerdictPubSubTest).
-        verify(verdictPubSub).publishAfterCommit(id.toString(), dto);
+        verify(verdictPubSub).publishAfterCommit(id.toString());
         // Announced to problem-service in the verdict's own transaction, keyed by problem.
         verify(outboxWriter).append(eq("oj.submission.events"), eq(s.getProblemId().toString()),
                 argThat(envelope -> envelope instanceof EventEnvelope<?> sent
@@ -89,7 +81,7 @@ class JudgeResultConsumerTest {
 
         assertThat(s.getStatus()).isEqualTo(SubmissionResult.PENDING.getValue());
         verify(submissionRepository, never()).save(any());
-        verify(verdictPubSub, never()).publishAfterCommit(any(), any());
+        verify(verdictPubSub, never()).publishAfterCommit(any());
     }
 
     @Test
@@ -106,7 +98,7 @@ class JudgeResultConsumerTest {
 
         assertThat(s.getStatus()).isEqualTo(SubmissionResult.ACCEPTED.getValue());
         verify(submissionRepository, never()).save(any());
-        verify(verdictPubSub, never()).publishAfterCommit(any(), any());
+        verify(verdictPubSub, never()).publishAfterCommit(any());
         // A duplicate verdict is not a second fact: exactly one event per submission.
         verify(outboxWriter, never()).append(any(), any(), any());
     }

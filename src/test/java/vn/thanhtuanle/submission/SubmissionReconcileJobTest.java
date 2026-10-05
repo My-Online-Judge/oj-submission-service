@@ -18,8 +18,6 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import vn.thanhtuanle.common.enums.SubmissionResult;
 import vn.thanhtuanle.entity.Submission;
 import vn.thanhtuanle.messaging.VerdictPubSub;
-import vn.thanhtuanle.submission.dto.SubmissionResponseDto;
-import vn.thanhtuanle.submission.mapper.SubmissionMapper;
 
 import java.time.LocalDateTime;
 import java.util.Collection;
@@ -41,10 +39,8 @@ class SubmissionReconcileJobTest {
 
     @Mock SubmissionRepository submissionRepository;
     @Mock VerdictPubSub verdictPubSub;
-    @Mock SubmissionMapper submissionMapper;
-    @Mock SubmissionDetailAssembler detailAssembler;
     @Mock StringRedisTemplate redisTemplate;
-    @Mock SubmissionSseRegistry sseRegistry;
+    @Mock VerdictPush verdictPush;
     final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
     @Mock OutboxWriter outboxWriter;
     @InjectMocks SubmissionReconcileJob job;
@@ -61,20 +57,13 @@ class SubmissionReconcileJobTest {
         stuck.setId(id);
         when(submissionRepository.findStuck(anyCollection(), any(LocalDateTime.class)))
                 .thenReturn(List.of(stuck));
-        SubmissionResponseDto dto = SubmissionResponseDto.builder()
-                .status(SubmissionResult.SYSTEM_ERROR.getValue()).build();
-        when(submissionMapper.toDto(eq(stuck), any())).thenReturn(dto);
 
         job.reconcileStuck();
 
         assertThat(stuck.getStatus()).isEqualTo(SubmissionResult.SYSTEM_ERROR.getValue());
         assertThat(stuck.getErrorMessage()).contains("timed out");
         verify(submissionRepository).save(stuck);
-        verify(verdictPubSub).publishAfterCommit(id.toString(), dto);
-        // Pins the two-arg mapper call: the payload shape must stay uniform with the consumer's
-        // (submissionMapper.toDto(submission, detailAssembler.assemble(submission))), not silently
-        // regress to the one-arg mapper, which would pass this stubbing identically.
-        verify(detailAssembler).assemble(stuck);
+        verify(verdictPubSub).publishAfterCommit(id.toString());
         verify(outboxWriter).append(eq("oj.submission.events"), eq(stuck.getProblemId().toString()),
                 argThat(envelope -> envelope instanceof EventEnvelope<?> sent
                         && sent.payload().equals(new SubmissionVerdictRecorded(id, stuck.getProblemId(),
@@ -96,20 +85,14 @@ class SubmissionReconcileJobTest {
         stuck2.setId(id2);
         when(submissionRepository.findStuck(anyCollection(), any(LocalDateTime.class)))
                 .thenReturn(List.of(stuck1, stuck2));
-        SubmissionResponseDto dto1 = SubmissionResponseDto.builder()
-                .status(SubmissionResult.SYSTEM_ERROR.getValue()).build();
-        SubmissionResponseDto dto2 = SubmissionResponseDto.builder()
-                .status(SubmissionResult.SYSTEM_ERROR.getValue()).build();
-        when(submissionMapper.toDto(eq(stuck1), any())).thenReturn(dto1);
-        when(submissionMapper.toDto(eq(stuck2), any())).thenReturn(dto2);
 
         // Real VerdictPubSub (not a spy on `publish` — it is package-private now, and this test
         // lives outside vn.thanhtuanle.messaging) wired to a mocked Redis template, so the
         // wire-level effect of each deferred publish is observable via convertAndSend, the same
         // way VerdictPubSubTest asserts it.
-        VerdictPubSub realPubSub = new VerdictPubSub(redisTemplate, objectMapper, sseRegistry);
+        VerdictPubSub realPubSub = new VerdictPubSub(redisTemplate, objectMapper, verdictPush);
         SubmissionReconcileJob txJob = new SubmissionReconcileJob(
-                submissionRepository, realPubSub, submissionMapper, detailAssembler, outboxWriter);
+                submissionRepository, realPubSub, outboxWriter);
         ReflectionTestUtils.setField(txJob, "stuckTimeoutMin", 5L);
 
         // Simulate the @Transactional wrapper: synchronization active during reconcileStuck.
@@ -148,7 +131,7 @@ class SubmissionReconcileJobTest {
         job.reconcileStuck();
 
         verify(submissionRepository, never()).save(any());
-        verify(verdictPubSub, never()).publishAfterCommit(any(), any());
+        verify(verdictPubSub, never()).publishAfterCommit(any());
     }
 
     @Test

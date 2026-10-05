@@ -9,18 +9,17 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
-import vn.thanhtuanle.submission.SubmissionSseRegistry;
-import vn.thanhtuanle.submission.dto.SubmissionResponseDto;
+import vn.thanhtuanle.submission.VerdictPush;
 
 /**
- * Fans out submission verdicts across judge-api instances so an SSE subscriber is notified no
+ * Fans out "this submission has a verdict" across submission-service instances so an SSE subscriber is notified no
  * matter which instance consumed the Kafka verdict.
  *
- * <p>The DB write stays single (JudgeResultConsumer, shared group, idempotent). After it commits,
- * the verdict is PUBLISHed to the {@code oj.verdicts} Redis channel; every instance SUBSCRIBEs and,
- * on receipt, pushes to its own local {@link SubmissionSseRegistry} — a no-op unless that instance
- * holds the submission's emitter. This decouples "which instance consumed the Kafka message" from
- * "which instance holds the SSE connection".
+ * <p>The DB write stays single (JudgeResultConsumer, shared group, idempotent). After it commits, the submission id is
+ * PUBLISHed to the {@code oj.verdicts} Redis channel; every instance SUBSCRIBEs and hands the id to its
+ * {@link VerdictPush} — a no-op unless that instance holds the submission's emitter, which then reads the verdict back
+ * and builds its view on its own pool. The message carries only the id, so neither the consumer's transaction nor this
+ * listener's thread ever waits for problem-service (the sample test cases in the view come from it).
  */
 @Component
 @RequiredArgsConstructor
@@ -31,7 +30,7 @@ public class VerdictPubSub implements MessageListener {
 
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
-    private final SubmissionSseRegistry sseRegistry;
+    private final VerdictPush verdictPush;
 
     /**
      * Broadcast a verdict to every instance so whichever one holds the SSE emitter delivers it.
@@ -43,10 +42,9 @@ public class VerdictPubSub implements MessageListener {
      * and this package's own tests) are the deferral mechanism itself and the no-transaction
      * immediate-publish path — never a second, competing writer.
      */
-    void publish(String submissionId, SubmissionResponseDto payload) {
+    void publish(String submissionId) {
         try {
-            String body = objectMapper.writeValueAsString(new VerdictMessage(submissionId, payload));
-            redisTemplate.convertAndSend(CHANNEL, body);
+            redisTemplate.convertAndSend(CHANNEL, objectMapper.writeValueAsString(new VerdictMessage(submissionId)));
         } catch (Exception e) {
             log.error("Failed to publish verdict for submission {}", submissionId, e);
         }
@@ -64,28 +62,28 @@ public class VerdictPubSub implements MessageListener {
      * that rule is enforced by the compiler for every caller outside this package, not left to
      * convention or review.
      */
-    public void publishAfterCommit(String submissionId, SubmissionResponseDto payload) {
+    public void publishAfterCommit(String submissionId) {
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
-                    publish(submissionId, payload);
+                    publish(submissionId);
                 }
             });
         } else {
-            publish(submissionId, payload);
+            publish(submissionId);
         }
     }
 
     @Override
     public void onMessage(Message message, byte[] pattern) {
         try {
-            VerdictMessage msg = objectMapper.readValue(message.getBody(), VerdictMessage.class);
-            sseRegistry.complete(msg.submissionId(), msg.payload());
+            verdictPush.pushIfWatched(objectMapper.readValue(message.getBody(), VerdictMessage.class).submissionId());
         } catch (Exception e) {
             log.error("Failed to handle verdict pub/sub message", e);
         }
     }
 
-    public record VerdictMessage(String submissionId, SubmissionResponseDto payload) {}
+    /** What travels on {@link #CHANNEL}: the id of a submission whose verdict was just committed. */
+    public record VerdictMessage(String submissionId) {}
 }

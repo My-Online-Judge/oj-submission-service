@@ -13,9 +13,7 @@ import vn.thanhtuanle.messaging.outbox.OutboxWriter;
 import vn.thanhtuanle.oj.common.event.OjTopics;
 import vn.thanhtuanle.oj.common.event.SubmissionVerdictRecorded;
 import vn.thanhtuanle.metrics.OjMetrics;
-import vn.thanhtuanle.submission.SubmissionDetailAssembler;
 import vn.thanhtuanle.submission.SubmissionRepository;
-import vn.thanhtuanle.submission.mapper.SubmissionMapper;
 
 import java.util.UUID;
 
@@ -26,9 +24,7 @@ public class JudgeResultConsumer {
 
     private final SubmissionRepository submissionRepository;
     private final VerdictPubSub verdictPubSub;
-    private final SubmissionMapper submissionMapper;
     private final OjMetrics ojMetrics;
-    private final SubmissionDetailAssembler detailAssembler;
     private final OutboxWriter outboxWriter;
 
     @KafkaListener(topics = KafkaTopics.SUBMISSION_JUDGED, groupId = "judge-api-results")
@@ -66,8 +62,7 @@ public class JudgeResultConsumer {
             // Deferred until this @Transactional method commits (VerdictPubSub.publishAfterCommit):
             // publishing mid-transaction would let a subscriber's fresh re-read still see PENDING
             // while the live publish has already passed its emitter by — a lost verdict.
-            verdictPubSub.publishAfterCommit(event.getSubmissionId(),
-                    submissionMapper.toDto(submission, detailAssembler.assemble(submission)));
+            verdictPubSub.publishAfterCommit(event.getSubmissionId());
             ojMetrics.recordVerdict(event.getStatus(), submission.getCreatedAt());
             log.info("Applied verdict {} to submission {}", event.getStatus(), id);
         } finally {

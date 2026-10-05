@@ -12,7 +12,6 @@ import vn.thanhtuanle.messaging.VerdictPubSub;
 import vn.thanhtuanle.messaging.outbox.OutboxWriter;
 import vn.thanhtuanle.oj.common.event.OjTopics;
 import vn.thanhtuanle.oj.common.event.SubmissionVerdictRecorded;
-import vn.thanhtuanle.submission.mapper.SubmissionMapper;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -34,8 +33,6 @@ public class SubmissionReconcileJob {
 
     private final SubmissionRepository submissionRepository;
     private final VerdictPubSub verdictPubSub;
-    private final SubmissionMapper submissionMapper;
-    private final SubmissionDetailAssembler detailAssembler;
     private final OutboxWriter outboxWriter;
 
     @Value("${judge.stuck-timeout-min:5}")
@@ -61,10 +58,8 @@ public class SubmissionReconcileJob {
                             SubmissionResult.SYSTEM_ERROR.getValue()).toEnvelope());
             // Deferred until this @Transactional method commits (see publishAfterCommit): the
             // whole loop runs before the commit, so an in-loop publish would race subscribers'
-            // fresh re-reads exactly like the consumer's did. Payload uses the same two-arg
-            // mapper shape as JudgeResultConsumer; details are null for stuck submissions.
-            verdictPubSub.publishAfterCommit(submission.getId().toString(),
-                    submissionMapper.toDto(submission, detailAssembler.assemble(submission)));
+            // fresh re-reads exactly like the consumer's did.
+            verdictPubSub.publishAfterCommit(submission.getId().toString());
             log.warn("Reconciled stuck submission {} -> SYSTEM_ERROR", submission.getId());
         }
         log.info("Reconcile flipped {} stuck submission(s) to SYSTEM_ERROR", stuck.size());

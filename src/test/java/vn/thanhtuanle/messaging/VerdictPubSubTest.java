@@ -8,68 +8,80 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.connection.Message;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
-import vn.thanhtuanle.common.enums.SubmissionResult;
-import vn.thanhtuanle.submission.SubmissionSseRegistry;
-import vn.thanhtuanle.submission.dto.SubmissionResponseDto;
+import vn.thanhtuanle.submission.VerdictPush;
+
+import java.nio.charset.StandardCharsets;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class VerdictPubSubTest {
 
     @Mock StringRedisTemplate redisTemplate;
-    @Mock SubmissionSseRegistry sseRegistry;
-    final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
+    @Mock VerdictPush verdictPush;
+    // Configured like Spring Boot's ObjectMapper (unknown properties ignored), which the service uses.
+    final ObjectMapper objectMapper = Jackson2ObjectMapperBuilder.json().build();
 
     private VerdictPubSub pubSub() {
-        return new VerdictPubSub(redisTemplate, objectMapper, sseRegistry);
+        return new VerdictPubSub(redisTemplate, objectMapper, verdictPush);
     }
 
-    @Test
-    void publish_sendsJsonToChannel() {
-        SubmissionResponseDto dto = SubmissionResponseDto.builder()
-                .status(SubmissionResult.ACCEPTED.getValue()).build();
-
-        pubSub().publish("sub-1", dto);
-
+    private String sentBody() {
         ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
         verify(redisTemplate).convertAndSend(eq(VerdictPubSub.CHANNEL), body.capture());
-        assertThat(body.getValue()).contains("sub-1");
+        return body.getValue();
+    }
+
+    private static Message message(String body) {
+        Message message = mock(Message.class);
+        when(message.getBody()).thenReturn(body.getBytes(StandardCharsets.UTF_8));
+        return message;
     }
 
     @Test
-    void onMessage_deserializesAndPushesToLocalRegistry() throws Exception {
-        SubmissionResponseDto dto = SubmissionResponseDto.builder()
-                .status(SubmissionResult.SYSTEM_ERROR.getValue()).build();
-        String json = objectMapper.writeValueAsString(
-                new VerdictPubSub.VerdictMessage("sub-2", dto));
-        Message message = mock(Message.class);
-        when(message.getBody()).thenReturn(json.getBytes());
+    void publish_sendsOnlyTheIdToTheChannel() throws Exception {
+        pubSub().publish("sub-1");
 
-        pubSub().onMessage(message, null);
+        assertThat(objectMapper.readTree(sentBody())).isEqualTo(objectMapper.readTree("{\"submissionId\":\"sub-1\"}"));
+    }
 
-        ArgumentCaptor<SubmissionResponseDto> pushed =
-                ArgumentCaptor.forClass(SubmissionResponseDto.class);
-        verify(sseRegistry).complete(eq("sub-2"), pushed.capture());
-        assertThat(pushed.getValue().getStatus()).isEqualTo(SubmissionResult.SYSTEM_ERROR.getValue());
+    @Test
+    void onMessage_handsTheIdToVerdictPush() {
+        pubSub().onMessage(message("{\"submissionId\":\"sub-2\"}"), null);
+
+        verify(verdictPush).pushIfWatched("sub-2");
+    }
+
+    @Test
+    void onMessage_acceptsTheOldFormat() {
+        // An instance not yet redeployed still sends {submissionId, payload}: the id is enough.
+        pubSub().onMessage(message("{\"submissionId\":\"sub-6\",\"payload\":{\"status\":0}}"), null);
+
+        verify(verdictPush).pushIfWatched("sub-6");
+    }
+
+    @Test
+    void onMessage_anUnreadableBodyIsLoggedNotThrown() {
+        assertThatCode(() -> pubSub().onMessage(message("not json"), null)).doesNotThrowAnyException();
+        verifyNoInteractions(verdictPush);
     }
 
     @Test
     void publishAfterCommit_withActiveTransaction_defersUntilAfterCommit() {
-        SubmissionResponseDto dto = SubmissionResponseDto.builder()
-                .status(SubmissionResult.ACCEPTED.getValue()).build();
-
         TransactionSynchronizationManager.initSynchronization();
         try {
-            pubSub().publishAfterCommit("sub-4", dto);
+            pubSub().publishAfterCommit("sub-4");
 
             // The transaction has not committed: nothing may reach the wire yet.
             verify(redisTemplate, never()).convertAndSend(any(), any());
@@ -81,36 +93,22 @@ class VerdictPubSubTest {
             TransactionSynchronizationManager.clearSynchronization();
         }
 
-        ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
-        verify(redisTemplate).convertAndSend(eq(VerdictPubSub.CHANNEL), body.capture());
-        assertThat(body.getValue()).contains("sub-4");
+        assertThat(sentBody()).contains("sub-4");
     }
 
     @Test
     void publishAfterCommit_withoutTransaction_publishesImmediately() {
-        SubmissionResponseDto dto = SubmissionResponseDto.builder()
-                .status(SubmissionResult.ACCEPTED.getValue()).build();
+        pubSub().publishAfterCommit("sub-5");
 
-        pubSub().publishAfterCommit("sub-5", dto);
-
-        ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
-        verify(redisTemplate).convertAndSend(eq(VerdictPubSub.CHANNEL), body.capture());
-        assertThat(body.getValue()).contains("sub-5");
+        assertThat(sentBody()).contains("sub-5");
     }
 
     @Test
-    void publishOutput_roundTripsThroughOnMessage() throws Exception {
-        SubmissionResponseDto dto = SubmissionResponseDto.builder()
-                .status(SubmissionResult.ACCEPTED.getValue()).build();
+    void publishOutput_roundTripsThroughOnMessage() {
+        pubSub().publish("sub-3");
 
-        pubSub().publish("sub-3", dto);
-        ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
-        verify(redisTemplate).convertAndSend(eq(VerdictPubSub.CHANNEL), body.capture());
+        pubSub().onMessage(message(sentBody()), null);
 
-        Message message = mock(Message.class);
-        when(message.getBody()).thenReturn(body.getValue().getBytes());
-        pubSub().onMessage(message, null);
-
-        verify(sseRegistry).complete(eq("sub-3"), any(SubmissionResponseDto.class));
+        verify(verdictPush).pushIfWatched("sub-3");
     }
 }

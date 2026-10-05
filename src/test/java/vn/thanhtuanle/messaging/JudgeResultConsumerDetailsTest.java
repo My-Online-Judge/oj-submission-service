@@ -12,10 +12,7 @@ import vn.thanhtuanle.entity.Submission;
 import vn.thanhtuanle.judge.dto.JudgeResultDto;
 import vn.thanhtuanle.messaging.event.SubmissionJudgedEvent;
 import vn.thanhtuanle.metrics.OjMetrics;
-import vn.thanhtuanle.submission.SubmissionDetailAssembler;
 import vn.thanhtuanle.submission.SubmissionRepository;
-import vn.thanhtuanle.submission.dto.SubmissionResponseDto;
-import vn.thanhtuanle.submission.mapper.SubmissionMapper;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -31,9 +28,7 @@ class JudgeResultConsumerDetailsTest {
 
     @Mock SubmissionRepository submissionRepository;
     @Mock VerdictPubSub verdictPubSub;
-    @Mock SubmissionMapper submissionMapper;
     @Mock OjMetrics ojMetrics;
-    @Mock SubmissionDetailAssembler detailAssembler;
     @Mock OutboxWriter outboxWriter;
     @InjectMocks JudgeResultConsumer consumer;
 
@@ -51,8 +46,6 @@ class JudgeResultConsumerDetailsTest {
         UUID id = UUID.randomUUID();
         Submission s = pending(id);
         when(submissionRepository.findById(id)).thenReturn(Optional.of(s));
-        when(submissionMapper.toDto(any(Submission.class), any()))
-                .thenReturn(SubmissionResponseDto.builder().build());
 
         JudgeResultDto case1 = JudgeResultDto.builder()
                 .testCase("1").result(0).cpuTime(12).realTime(15).memory(3072L).build();
@@ -78,8 +71,6 @@ class JudgeResultConsumerDetailsTest {
         UUID id = UUID.randomUUID();
         Submission s = pending(id);
         when(submissionRepository.findById(id)).thenReturn(Optional.of(s));
-        when(submissionMapper.toDto(any(Submission.class), any()))
-                .thenReturn(SubmissionResponseDto.builder().build());
 
         SubmissionJudgedEvent e = SubmissionJudgedEvent.builder()
                 .submissionId(id.toString())

@@ -12,10 +12,7 @@ import vn.thanhtuanle.common.enums.SubmissionResult;
 import vn.thanhtuanle.entity.Submission;
 import vn.thanhtuanle.messaging.event.SubmissionJudgedEvent;
 import vn.thanhtuanle.metrics.OjMetrics;
-import vn.thanhtuanle.submission.SubmissionDetailAssembler;
 import vn.thanhtuanle.submission.SubmissionRepository;
-import vn.thanhtuanle.submission.dto.SubmissionResponseDto;
-import vn.thanhtuanle.submission.mapper.SubmissionMapper;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -43,9 +40,7 @@ import static org.mockito.Mockito.when;
 class JudgeResultConsumerPublishAfterCommitTest {
 
     @Mock SubmissionRepository submissionRepository;
-    @Mock SubmissionMapper submissionMapper;
     @Mock OjMetrics ojMetrics;
-    @Mock SubmissionDetailAssembler detailAssembler;
 
     @Test
     void withActiveTransaction_publishesOnlyAfterCommit() {
@@ -56,16 +51,12 @@ class JudgeResultConsumerPublishAfterCommitTest {
                 .build();
         s.setId(id);
         when(submissionRepository.findById(id)).thenReturn(Optional.of(s));
-        SubmissionResponseDto dto = SubmissionResponseDto.builder()
-                .status(SubmissionResult.ACCEPTED.getValue()).build();
-        when(submissionMapper.toDto(eq(s), any())).thenReturn(dto);
 
         // Real deferral logic; the wire-level publish itself is stubbed (no Redis here).
         VerdictPubSub verdictPubSub = spy(new VerdictPubSub(null, null, null));
-        doNothing().when(verdictPubSub).publish(any(), any());
+        doNothing().when(verdictPubSub).publish(any());
         JudgeResultConsumer consumer = new JudgeResultConsumer(
-                submissionRepository, verdictPubSub, submissionMapper, ojMetrics, detailAssembler,
-                mock(OutboxWriter.class));
+                submissionRepository, verdictPubSub, ojMetrics, mock(OutboxWriter.class));
 
         SubmissionJudgedEvent e = SubmissionJudgedEvent.builder()
                 .submissionId(id.toString()).status(SubmissionResult.ACCEPTED.getValue())
@@ -79,7 +70,7 @@ class JudgeResultConsumerPublishAfterCommitTest {
             // The state write happens inside the transaction as before…
             verify(submissionRepository).save(s);
             // …but the publish must NOT have fired yet: the tx has not committed.
-            verify(verdictPubSub, never()).publish(any(), any());
+            verify(verdictPubSub, never()).publish(any());
 
             // Simulate the commit completing.
             for (TransactionSynchronization sync : TransactionSynchronizationManager.getSynchronizations()) {
@@ -89,7 +80,7 @@ class JudgeResultConsumerPublishAfterCommitTest {
             TransactionSynchronizationManager.clearSynchronization();
         }
 
-        verify(verdictPubSub).publish(id.toString(), dto);
+        verify(verdictPubSub).publish(id.toString());
     }
 
     // The no-transaction path (unit tests, direct calls) publishing immediately is covered by

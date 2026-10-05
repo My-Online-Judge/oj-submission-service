@@ -8,9 +8,7 @@ import vn.thanhtuanle.common.enums.SubmissionResult;
 import vn.thanhtuanle.entity.Submission;
 import vn.thanhtuanle.messaging.event.SubmissionJudgedEvent;
 import vn.thanhtuanle.metrics.OjMetrics;
-import vn.thanhtuanle.submission.SubmissionDetailAssembler;
 import vn.thanhtuanle.submission.SubmissionRepository;
-import vn.thanhtuanle.submission.mapper.SubmissionMapper;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -27,9 +25,7 @@ class JudgeResultConsumerMdcTest {
     void setsMdcDuringProcessing_andClearsAfter() {
         SubmissionRepository repo = mock(SubmissionRepository.class);
         VerdictPubSub pubSub = mock(VerdictPubSub.class);
-        SubmissionMapper mapper = mock(SubmissionMapper.class);
         OjMetrics metrics = mock(OjMetrics.class);
-        SubmissionDetailAssembler detailAssembler = mock(SubmissionDetailAssembler.class);
         UUID id = UUID.randomUUID();
         Submission sub = new Submission();
         sub.setProblemId(UUID.randomUUID());
@@ -39,9 +35,9 @@ class JudgeResultConsumerMdcTest {
 
         AtomicReference<String> mdcDuring = new AtomicReference<>();
         doAnswer(inv -> { mdcDuring.set(MDC.get("submissionId")); return null; })
-                .when(pubSub).publishAfterCommit(any(), any());
+                .when(pubSub).publishAfterCommit(any());
 
-        JudgeResultConsumer consumer = new JudgeResultConsumer(repo, pubSub, mapper, metrics, detailAssembler, mock(OutboxWriter.class));
+        JudgeResultConsumer consumer = new JudgeResultConsumer(repo, pubSub, metrics, mock(OutboxWriter.class));
         SubmissionJudgedEvent event = new SubmissionJudgedEvent();
         event.setSubmissionId(id.toString());
         event.setStatus(SubmissionResult.ACCEPTED.getValue());

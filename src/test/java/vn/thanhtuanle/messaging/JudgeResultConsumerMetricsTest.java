@@ -6,9 +6,7 @@ import vn.thanhtuanle.common.enums.SubmissionResult;
 import vn.thanhtuanle.entity.Submission;
 import vn.thanhtuanle.messaging.event.SubmissionJudgedEvent;
 import vn.thanhtuanle.metrics.OjMetrics;
-import vn.thanhtuanle.submission.SubmissionDetailAssembler;
 import vn.thanhtuanle.submission.SubmissionRepository;
-import vn.thanhtuanle.submission.mapper.SubmissionMapper;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -21,10 +19,8 @@ class JudgeResultConsumerMetricsTest {
 
     private final SubmissionRepository repo = mock(SubmissionRepository.class);
     private final VerdictPubSub pubSub = mock(VerdictPubSub.class);
-    private final SubmissionMapper mapper = mock(SubmissionMapper.class);
     private final OjMetrics metrics = mock(OjMetrics.class);
-    private final SubmissionDetailAssembler detailAssembler = mock(SubmissionDetailAssembler.class);
-    private final JudgeResultConsumer consumer = new JudgeResultConsumer(repo, pubSub, mapper, metrics, detailAssembler, mock(OutboxWriter.class));
+    private final JudgeResultConsumer consumer = new JudgeResultConsumer(repo, pubSub, metrics, mock(OutboxWriter.class));
 
     private SubmissionJudgedEvent event(UUID id, Integer status) {
         SubmissionJudgedEvent e = new SubmissionJudgedEvent();

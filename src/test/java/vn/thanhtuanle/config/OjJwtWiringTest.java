@@ -33,7 +33,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * The whole request path with real tokens in the shape identity-service issues, verified by
- * oj-common's lenient filter inside judge-api's real SecurityConfig chain. Only the key lookup
+ * oj-common's lenient filter inside this service's real SecurityConfig chain. Only the key lookup
  * differs: the decoder is keyed with a test key directly, because MockMvc has no identity-service
  * for the JWKS URL to reach.
  */

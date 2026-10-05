@@ -192,7 +192,7 @@
 			<scope>runtime</scope>
 		</dependency>
 
-		<!-- Redis (SSE verdict fan-out across judge-api instances) -->
+		<!-- Redis (SSE verdict fan-out across submission-service instances) -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-data-redis</artifactId>

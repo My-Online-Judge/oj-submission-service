@@ -9,7 +9,7 @@ import org.springframework.data.redis.listener.RedisMessageListenerContainer;
 import vn.thanhtuanle.messaging.VerdictPubSub;
 
 /**
- * Subscribes each judge-api instance to the verdict fan-out channel. Excluded from the test profile
+ * Subscribes each submission-service instance to the verdict fan-out channel. Excluded from the test profile
  * because the container eagerly opens a Redis subscription connection and no Redis runs under tests.
  */
 @Configuration

@@ -1,5 +1,6 @@
 package vn.thanhtuanle.messaging;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import vn.thanhtuanle.messaging.outbox.OutboxWriter;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -53,7 +54,7 @@ class JudgeResultConsumerPublishAfterCommitTest {
         when(submissionRepository.findById(id)).thenReturn(Optional.of(s));
 
         // Real deferral logic; the wire-level publish itself is stubbed (no Redis here).
-        VerdictPubSub verdictPubSub = spy(new VerdictPubSub(null, null, null));
+        VerdictPubSub verdictPubSub = spy(new VerdictPubSub(null, null, null, new SimpleMeterRegistry()));
         doNothing().when(verdictPubSub).publish(any());
         JudgeResultConsumer consumer = new JudgeResultConsumer(
                 submissionRepository, verdictPubSub, ojMetrics, mock(OutboxWriter.class));

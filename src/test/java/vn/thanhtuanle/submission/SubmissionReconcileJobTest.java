@@ -1,5 +1,6 @@
 package vn.thanhtuanle.submission;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import vn.thanhtuanle.messaging.outbox.OutboxWriter;
 import vn.thanhtuanle.oj.common.event.EventEnvelope;
 import vn.thanhtuanle.oj.common.event.SubmissionVerdictRecorded;
@@ -90,7 +91,7 @@ class SubmissionReconcileJobTest {
         // lives outside vn.thanhtuanle.messaging) wired to a mocked Redis template, so the
         // wire-level effect of each deferred publish is observable via convertAndSend, the same
         // way VerdictPubSubTest asserts it.
-        VerdictPubSub realPubSub = new VerdictPubSub(redisTemplate, objectMapper, verdictPush);
+        VerdictPubSub realPubSub = new VerdictPubSub(redisTemplate, objectMapper, verdictPush, new SimpleMeterRegistry());
         SubmissionReconcileJob txJob = new SubmissionReconcileJob(
                 submissionRepository, realPubSub, outboxWriter);
         ReflectionTestUtils.setField(txJob, "stuckTimeoutMin", 5L);

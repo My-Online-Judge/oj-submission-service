@@ -26,6 +26,7 @@ public class SubmissionRateLimiter {
 
     private final StringRedisTemplate redis;
     private final Counter throttled;
+    private final Counter fallbacks;
     private final long cooldownSeconds;
 
     public SubmissionRateLimiter(StringRedisTemplate redis, MeterRegistry registry,
@@ -39,6 +40,11 @@ public class SubmissionRateLimiter {
         // relying on a zero series being present. See the ops memory for the full investigation.
         this.throttled = Counter.builder("oj.submission.rate_limited")
                 .description("Submissions rejected by the per-user cooldown")
+                .register(registry);
+        // Sub-project 6: the RedisUnavailable rule watches every submit let through because Redis did not answer.
+        this.fallbacks = Counter.builder("oj.redis.fallback")
+                .description("Requests or work that went on without Redis because a Redis call failed (fail-open)")
+                .tag("lookup", "rate_limit")
                 .register(registry);
         this.cooldownSeconds = cooldownSeconds;
     }
@@ -54,6 +60,7 @@ public class SubmissionRateLimiter {
             }
             remaining = redis.getExpire(key, TimeUnit.SECONDS);
         } catch (Exception e) {
+            fallbacks.increment();
             log.warn("Submission limiter unavailable, allowing: {}", e.getMessage());
             return;
         }

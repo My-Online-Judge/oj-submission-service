@@ -1,7 +1,8 @@
 package vn.thanhtuanle.messaging;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.RequiredArgsConstructor;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.connection.Message;
 import org.springframework.data.redis.connection.MessageListener;
@@ -22,7 +23,6 @@ import vn.thanhtuanle.submission.VerdictPush;
  * listener's thread ever waits for problem-service (the sample test cases in the view come from it).
  */
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class VerdictPubSub implements MessageListener {
 
@@ -31,6 +31,19 @@ public class VerdictPubSub implements MessageListener {
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
     private final VerdictPush verdictPush;
+    private final Counter fallbacks;
+
+    public VerdictPubSub(StringRedisTemplate redisTemplate, ObjectMapper objectMapper, VerdictPush verdictPush,
+                         MeterRegistry registry) {
+        this.redisTemplate = redisTemplate;
+        this.objectMapper = objectMapper;
+        this.verdictPush = verdictPush;
+        // A verdict that could not be broadcast still sits in the database; only its live SSE push is lost.
+        this.fallbacks = Counter.builder("oj.redis.fallback")
+                .description("Requests or work that went on without Redis because a Redis call failed (fail-open)")
+                .tag("lookup", "verdict_publish")
+                .register(registry);
+    }
 
     /**
      * Broadcast a verdict to every instance so whichever one holds the SSE emitter delivers it.
@@ -46,6 +59,7 @@ public class VerdictPubSub implements MessageListener {
         try {
             redisTemplate.convertAndSend(CHANNEL, objectMapper.writeValueAsString(new VerdictMessage(submissionId)));
         } catch (Exception e) {
+            fallbacks.increment();
             log.error("Failed to publish verdict for submission {}", submissionId, e);
         }
     }

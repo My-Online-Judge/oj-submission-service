@@ -34,11 +34,13 @@ class SubmissionRateLimiterTest {
     @Mock ValueOperations<String, String> valueOps;
 
     SubmissionRateLimiter limiter;
+    SimpleMeterRegistry registry;
 
     @BeforeEach
     void setUp() {
         when(redis.opsForValue()).thenReturn(valueOps);
-        limiter = new SubmissionRateLimiter(redis, new SimpleMeterRegistry(), 10);
+        registry = new SimpleMeterRegistry();
+        limiter = new SubmissionRateLimiter(redis, registry, 10);
     }
 
     @Test
@@ -72,5 +74,14 @@ class SubmissionRateLimiterTest {
     void redisDown_failsOpen() {
         when(valueOps.setIfAbsent(anyString(), anyString(), any(Duration.class))).thenThrow(new RuntimeException("down"));
         assertThatCode(() -> limiter.acquire(USER)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void redisDown_isCountedAsARedisFallback() {
+        when(valueOps.setIfAbsent(anyString(), anyString(), any(Duration.class))).thenThrow(new RuntimeException("down"));
+
+        limiter.acquire(USER);
+
+        assertThat(registry.counter("oj.redis.fallback", "lookup", "rate_limit").count()).isEqualTo(1);
     }
 }

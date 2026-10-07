@@ -1,5 +1,6 @@
 package vn.thanhtuanle.messaging;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -33,8 +34,19 @@ class VerdictPubSubTest {
     // Configured like Spring Boot's ObjectMapper (unknown properties ignored), which the service uses.
     final ObjectMapper objectMapper = Jackson2ObjectMapperBuilder.json().build();
 
+    final SimpleMeterRegistry registry = new SimpleMeterRegistry();
+
     private VerdictPubSub pubSub() {
-        return new VerdictPubSub(redisTemplate, objectMapper, verdictPush);
+        return new VerdictPubSub(redisTemplate, objectMapper, verdictPush, registry);
+    }
+
+    @Test
+    void publish_aRedisFailureIsCountedAsARedisFallback() {
+        when(redisTemplate.convertAndSend(eq(VerdictPubSub.CHANNEL), any())).thenThrow(new RuntimeException("redis down"));
+
+        pubSub().publish("s-1");
+
+        assertThat(registry.counter("oj.redis.fallback", "lookup", "verdict_publish").count()).isEqualTo(1);
     }
 
     private String sentBody() {

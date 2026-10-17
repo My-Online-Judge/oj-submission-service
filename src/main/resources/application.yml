@@ -95,6 +95,8 @@ oj:
     rpc-token: ${PROBLEM_RPC_TOKEN:}
     # Per attempt; UNAVAILABLE is retried twice (ProblemServiceResilience).
     deadline: 2s
+    # A connect gives up after this (ProblemServiceClientConfig): a stopped problem-service fails a call at once.
+    connect-timeout: 500ms
   submission:
     cooldown-seconds: ${SUBMISSION_COOLDOWN_SECONDS:10}
   outbox:

@@ -32,6 +32,9 @@ spring:
         problem-service:
           address: ${PROBLEM_GRPC_ADDRESS:static://localhost:9090}
           negotiation-type: plaintext
+          # One problem-service: round_robin gains nothing, and pick_first stays in TRANSIENT_FAILURE while it
+          # reconnects, so a call fails at once instead of waiting in the channel (sub-project 8 G1).
+          default-load-balancing-policy: pick_first
   data:
     redis:
       host: ${REDIS_HOST:localhost}

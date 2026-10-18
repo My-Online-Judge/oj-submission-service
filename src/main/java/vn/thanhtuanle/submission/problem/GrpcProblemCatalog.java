@@ -18,7 +18,8 @@ import java.util.function.Supplier;
 
 /**
  * {@link ProblemCatalog} over problem-service's internal gRPC API. Each attempt has its own deadline; the
- * retry wraps the circuit breaker, so every attempt counts and an open breaker is not retried.
+ * retry wraps the circuit breaker, so every attempt counts and an open breaker is not retried. An attempt is refused at
+ * once while the channel recovers from a failure ({@link ChannelRecovery}).
  */
 @Slf4j
 public class GrpcProblemCatalog implements ProblemCatalog {
@@ -27,13 +28,15 @@ public class GrpcProblemCatalog implements ProblemCatalog {
     private final CircuitBreaker circuitBreaker;
     private final Retry retry;
     private final Duration deadline;
+    private final ChannelRecovery recovery;
 
     public GrpcProblemCatalog(ProblemInternalGrpc.ProblemInternalBlockingStub stub, CircuitBreaker circuitBreaker,
-            Retry retry, Duration deadline) {
+            Retry retry, Duration deadline, ChannelRecovery recovery) {
         this.stub = stub;
         this.circuitBreaker = circuitBreaker;
         this.retry = retry;
         this.deadline = deadline;
+        this.recovery = recovery;
     }
 
     @Override
@@ -77,6 +80,11 @@ public class GrpcProblemCatalog implements ProblemCatalog {
     }
 
     private <T> T call(Supplier<T> rpc) {
-        return Retry.decorateSupplier(retry, CircuitBreaker.decorateSupplier(circuitBreaker, rpc)).get();
+        // The recovery check runs inside the breaker, so a refusal counts as a failure (sub-project 8 G2).
+        Supplier<T> attempt = () -> {
+            recovery.admit();
+            return rpc.get();
+        };
+        return Retry.decorateSupplier(retry, CircuitBreaker.decorateSupplier(circuitBreaker, attempt)).get();
     }
 }

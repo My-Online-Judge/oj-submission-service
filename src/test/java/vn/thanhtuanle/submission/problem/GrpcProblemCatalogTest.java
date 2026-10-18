@@ -2,6 +2,7 @@ package vn.thanhtuanle.submission.problem;
 
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.retry.Retry;
+import io.grpc.ConnectivityState;
 import io.grpc.ManagedChannel;
 import io.grpc.Server;
 import io.grpc.ServerInterceptors;
@@ -64,7 +65,20 @@ class GrpcProblemCatalogTest {
     private GrpcProblemCatalog catalog(Duration deadline) {
         return new GrpcProblemCatalog(
                 ProblemInternalGrpc.newBlockingStub(channel).withInterceptors(new ServiceTokenClientInterceptor(TOKEN)),
-                breaker, Retry.of("problem-service", ProblemServiceResilience.retryConfig()), deadline);
+                breaker, Retry.of("problem-service", ProblemServiceResilience.retryConfig()), deadline,
+                new ChannelRecovery(channel));
+    }
+
+    @Test
+    void aRefusedCallCountsAsAFailureAndNeverReachesTheServer() {
+        GrpcProblemCatalog catalog = new GrpcProblemCatalog(
+                ProblemInternalGrpc.newBlockingStub(channel).withInterceptors(new ServiceTokenClientInterceptor(TOKEN)),
+                breaker, Retry.of("problem-service", ProblemServiceResilience.retryConfig()), Duration.ofSeconds(2),
+                new ChannelRecovery(new StateDrivenChannel(ConnectivityState.TRANSIENT_FAILURE)));
+
+        assertThatThrownBy(() -> catalog.judgeSpec("a-plus-b")).isInstanceOf(ProblemCatalogUnavailableException.class);
+        assertThat(problems.calls).hasValue(0);
+        assertThat(breaker.getMetrics().getNumberOfFailedCalls()).isGreaterThanOrEqualTo(1);
     }
 
     private GrpcProblemCatalog catalog() {
@@ -184,7 +198,8 @@ class GrpcProblemCatalogTest {
         GrpcProblemCatalog wrongToken = new GrpcProblemCatalog(
                 ProblemInternalGrpc.newBlockingStub(channel)
                         .withInterceptors(new ServiceTokenClientInterceptor("ffffffffffffffffffffffffffffffff")),
-                breaker, Retry.of("problem-service", ProblemServiceResilience.retryConfig()), Duration.ofSeconds(2));
+                breaker, Retry.of("problem-service", ProblemServiceResilience.retryConfig()), Duration.ofSeconds(2),
+                new ChannelRecovery(channel));
 
         assertThatThrownBy(() -> wrongToken.judgeSpec("a-plus-b")).isInstanceOf(ProblemCatalogUnavailableException.class);
     }

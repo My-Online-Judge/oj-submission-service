@@ -3,6 +3,7 @@ package vn.thanhtuanle.submission.problem;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import io.github.resilience4j.micrometer.tagged.TaggedCircuitBreakerMetrics;
 import io.github.resilience4j.retry.RetryRegistry;
+import io.grpc.ManagedChannel;
 import io.grpc.netty.NettyChannelBuilder;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.netty.channel.ChannelOption;
@@ -43,14 +44,27 @@ public class ProblemServiceClientConfig {
                 (int) connectTimeout.toMillis());
     }
 
+    /** The one channel to problem-service: the catalog calls it and {@link ChannelRecovery} watches it. */
     @Bean
-    public ProblemCatalog problemCatalog(GrpcChannelFactory channels, CircuitBreakerRegistry circuitBreakers,
+    public ManagedChannel problemServiceChannel(GrpcChannelFactory channels) {
+        return channels.createChannel(ProblemServiceResilience.NAME);
+    }
+
+    @Bean
+    public ChannelRecovery problemServiceRecovery(ManagedChannel problemServiceChannel) {
+        return new ChannelRecovery(problemServiceChannel);
+    }
+
+    @Bean
+    public ProblemCatalog problemCatalog(ManagedChannel problemServiceChannel, ChannelRecovery problemServiceRecovery,
+            CircuitBreakerRegistry circuitBreakers,
             @Value("${oj.problems.rpc-token:}") String token,
             @Value("${oj.problems.deadline:2s}") Duration deadline) {
         ProblemInternalGrpc.ProblemInternalBlockingStub stub = ProblemInternalGrpc
-                .newBlockingStub(channels.createChannel(ProblemServiceResilience.NAME))
+                .newBlockingStub(problemServiceChannel)
                 .withInterceptors(new ServiceTokenClientInterceptor(token));
         return new GrpcProblemCatalog(stub, circuitBreakers.circuitBreaker(ProblemServiceResilience.NAME),
-                RetryRegistry.of(ProblemServiceResilience.retryConfig()).retry(ProblemServiceResilience.NAME), deadline);
+                RetryRegistry.of(ProblemServiceResilience.retryConfig()).retry(ProblemServiceResilience.NAME), deadline,
+                problemServiceRecovery);
     }
 }

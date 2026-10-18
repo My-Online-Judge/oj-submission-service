@@ -1,5 +1,6 @@
 package vn.thanhtuanle.submission.problem;
 
+import io.grpc.ManagedChannel;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,6 +16,13 @@ class ProblemServiceClientWiringTest {
 
     @Autowired ProblemCatalog problemCatalog;
     @Autowired MeterRegistry meters;
+    @Autowired ManagedChannel problemServiceChannel;
+    @Autowired ChannelRecovery problemServiceRecovery;
+
+    @Test
+    void theCatalogWatchesTheChannelItCalls() {
+        assertThat(problemServiceRecovery.channel()).isSameAs(problemServiceChannel);
+    }
 
     @Test
     void problemsComeFromProblemService() {

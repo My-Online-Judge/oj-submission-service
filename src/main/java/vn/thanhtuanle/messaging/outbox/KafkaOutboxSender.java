@@ -4,13 +4,12 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.springframework.beans.factory.DisposableBean;
-import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.boot.autoconfigure.kafka.KafkaProperties;
-import org.springframework.boot.ssl.SslBundles;
 import org.springframework.kafka.core.DefaultKafkaProducerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.core.ProducerFactory;
 import org.springframework.stereotype.Component;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
@@ -25,8 +24,13 @@ public class KafkaOutboxSender implements OutboxSender, DisposableBean {
     private final DefaultKafkaProducerFactory<String, byte[]> producerFactory;
     private final KafkaTemplate<String, byte[]> template;
 
-    public KafkaOutboxSender(KafkaProperties kafkaProperties, ObjectProvider<SslBundles> sslBundles) {
-        Map<String, Object> config = kafkaProperties.buildProducerProperties(sslBundles.getIfAvailable());
+    /**
+     * Starts from the configuration of Boot's own producer factory: Boot 3.5 applies {@code spring.kafka.ssl.bundle}
+     * (and other connection details) there, not in {@code KafkaProperties.buildProducerProperties}, so building from
+     * the properties alone would talk SSL without our CA and fail every send.
+     */
+    public KafkaOutboxSender(ProducerFactory<?, ?> bootProducerFactory) {
+        Map<String, Object> config = new HashMap<>(bootProducerFactory.getConfigurationProperties());
         config.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
         config.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class);
         // While Kafka is down a relay pass gives up within seconds; the rows wait for the next pass.

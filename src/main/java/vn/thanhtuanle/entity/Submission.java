@@ -13,6 +13,7 @@ import vn.thanhtuanle.judge.dto.JudgeResultDto;
 
 import lombok.experimental.SuperBuilder;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -67,4 +68,11 @@ public class Submission extends BaseEntity {
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "details")
     private List<JudgeResultDto> details;
+
+    // When a worker announced it began judging (submission.started), in the service's zone like createdAt.
+    @Column(name = "judging_started_at")
+    private LocalDateTime judgingStartedAt;
+
+    @Column(name = "rejudge_count", nullable = false)
+    private int rejudgeCount;
 }

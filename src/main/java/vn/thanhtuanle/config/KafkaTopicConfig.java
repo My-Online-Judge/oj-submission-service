@@ -52,6 +52,15 @@ public class KafkaTopicConfig {
                 .build();
     }
 
+    // judge-worker's judging starts, keyed by submissionId.
+    @Bean
+    public NewTopic submissionStartedTopic() {
+        return TopicBuilder.name(KafkaTopics.SUBMISSION_STARTED)
+                .partitions(partitions)
+                .replicas(1)
+                .build();
+    }
+
     @Bean
     public NewTopic submissionJudgedDlqTopic() {
         return TopicBuilder.name(KafkaTopics.SUBMISSION_JUDGED_DLQ)

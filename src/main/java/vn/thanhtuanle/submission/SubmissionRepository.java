@@ -10,6 +10,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -76,6 +77,16 @@ public interface SubmissionRepository extends JpaRepository<Submission, UUID> {
             @Param("problemSlug") String problemSlug,
             Pageable pageable
     );
+
+    /**
+     * A worker began judging: a PENDING or JUDGING submission becomes JUDGING with that start time (a second start, a
+     * worker's retry or a redelivery, replaces it). A finished or unknown submission is left alone: 0 rows.
+     */
+    @Modifying(clearAutomatically = true)
+    @Query("UPDATE Submission s SET s.status = 7, s.judgingStartedAt = :startedAt, s.updatedAt = :now "
+            + "WHERE s.id = :id AND s.status IN (6, 7)")
+    int applyStarted(@Param("id") UUID id, @Param("startedAt") LocalDateTime startedAt,
+                     @Param("now") LocalDateTime now);
 
     /** The submission with its language loaded, for mapping outside a transaction (VerdictPush). */
     @EntityGraph(attributePaths = "language")

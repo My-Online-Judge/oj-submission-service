@@ -18,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * submission-db is built by Flyway alone: V1 (the four live tables) + V2 (the languages) + V3 (what the sandbox can
- * judge of them). The context starting at all proves Hibernate's ddl-auto=validate accepts them for every entity; the
+ * judge of them) + V4 (the judging start, the rejudge count and the indexes the reconcile job and rejudge read). The context starting at all proves Hibernate's ddl-auto=validate accepts them for every entity; the
  * assertions pin what the monolith's migration tests used to guard (a required problem_slug, an error_message that
  * holds a compiler's full output).
  */
@@ -56,7 +56,7 @@ class SubmissionSchemaTest {
     @Test
     void submissionDbHoldsTheFourSubmissionTablesAndTheLanguages() {
         assertThat(jdbc.queryForList("SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank",
-                String.class)).containsExactly("1", "2", "3");
+                String.class)).containsExactly("1", "2", "3", "4");
         assertThat(jdbc.queryForList("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' "
                 + "ORDER BY table_name", String.class))
                 .containsExactly("flyway_schema_history", "t_judge_servers", "t_languages", "t_outbox", "t_submissions");
@@ -81,5 +81,24 @@ class SubmissionSchemaTest {
                 .containsEntry("seccomp_rule", "c_cpp").containsEntry("compile_max_memory", 1073741824L);
         assertThat(jdbc.queryForObject("SELECT compile_max_memory FROM t_languages WHERE identifier = 'go'", Long.class))
                 .isEqualTo(-1L);
+    }
+
+    @Test
+    void v4AddsTheJudgingColumnsAndIndexes() {
+        assertThat(jdbc.queryForMap("SELECT data_type, is_nullable FROM information_schema.columns "
+                + "WHERE table_name = 't_submissions' AND column_name = 'judging_started_at'"))
+                .containsEntry("data_type", "timestamp without time zone").containsEntry("is_nullable", "YES");
+        assertThat(jdbc.queryForMap("SELECT data_type, is_nullable, column_default FROM information_schema.columns "
+                + "WHERE table_name = 't_submissions' AND column_name = 'rejudge_count'"))
+                .containsEntry("data_type", "integer").containsEntry("is_nullable", "NO")
+                .containsEntry("column_default", "0");
+
+        assertThat(jdbc.queryForObject("SELECT indexdef FROM pg_indexes WHERE indexname = 'ix_submissions_unfinished'",
+                String.class))
+                .contains("ON public.t_submissions USING btree (created_at)")
+                .contains("WHERE (status = ANY (ARRAY[6, 7]))");
+        assertThat(jdbc.queryForObject("SELECT indexdef FROM pg_indexes WHERE indexname = 'ix_outbox_topic_key'",
+                String.class))
+                .endsWith("ON public.t_outbox USING btree (topic, message_key)");
     }
 }

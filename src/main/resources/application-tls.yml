@@ -21,3 +21,9 @@ spring:
     redis:
       ssl:
         bundle: oj
+  kafka:
+    # Listener INTERNAL: TLS, the broker verified against the CA (and its host name), this service's certificate presented.
+    security:
+      protocol: SSL
+    ssl:
+      bundle: oj

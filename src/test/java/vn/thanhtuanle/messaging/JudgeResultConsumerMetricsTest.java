@@ -29,45 +29,37 @@ class JudgeResultConsumerMetricsTest {
         return e;
     }
 
+    private void rowsUpdated(UUID id, int rows) {
+        when(repo.applyVerdict(eq(id), anyInt(), any(), any(), anyInt(), any(), any(), any(), any())).thenReturn(rows);
+    }
+
     @Test
     void records_onWinningVerdict() {
         UUID id = UUID.randomUUID();
         Submission sub = new Submission();
         sub.setProblemId(UUID.randomUUID());
-        sub.setStatus(SubmissionResult.PENDING.getValue());
+        sub.setStatus(SubmissionResult.ACCEPTED.getValue());
         sub.setCreatedAt(LocalDateTime.now().minusSeconds(1));
+        rowsUpdated(id, 1);
         when(repo.findById(id)).thenReturn(Optional.of(sub));
         consumer.onJudged(event(id, SubmissionResult.ACCEPTED.getValue()));
-        verify(metrics).recordVerdict(eq(SubmissionResult.ACCEPTED.getValue()), any());
+        verify(metrics).recordVerdict(eq(SubmissionResult.ACCEPTED.getValue()), eq(sub.getCreatedAt()), eq(false));
     }
 
     @Test
     void doesNotRecord_onDuplicateTerminal() {
         UUID id = UUID.randomUUID();
-        Submission sub = new Submission();
-        sub.setProblemId(UUID.randomUUID());
-        sub.setStatus(SubmissionResult.ACCEPTED.getValue());
-        when(repo.findById(id)).thenReturn(Optional.of(sub));
+        rowsUpdated(id, 0);  // the row is already finished, so the conditional write matches nothing
         consumer.onJudged(event(id, SubmissionResult.WRONG_ANSWER.getValue()));
-        verify(metrics, never()).recordVerdict(anyInt(), any());
-    }
-
-    @Test
-    void doesNotRecord_onNullStatus() {
-        UUID id = UUID.randomUUID();
-        Submission sub = new Submission();
-        sub.setProblemId(UUID.randomUUID());
-        sub.setStatus(SubmissionResult.PENDING.getValue());
-        when(repo.findById(id)).thenReturn(Optional.of(sub));
-        consumer.onJudged(event(id, null));
-        verify(metrics, never()).recordVerdict(anyInt(), any());
+        verify(metrics, never()).recordVerdict(anyInt(), any(), anyBoolean());
     }
 
     @Test
     void doesNotRecord_onUnknownSubmission() {
         UUID id = UUID.randomUUID();
-        when(repo.findById(id)).thenReturn(Optional.empty());
+        rowsUpdated(id, 0);  // no such row: also nothing matched
         consumer.onJudged(event(id, SubmissionResult.ACCEPTED.getValue()));
-        verify(metrics, never()).recordVerdict(anyInt(), any());
+        verify(repo, never()).findById(any());
+        verify(metrics, never()).recordVerdict(anyInt(), any(), anyBoolean());
     }
 }

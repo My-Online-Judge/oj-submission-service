@@ -35,11 +35,16 @@ public class OjMetrics {
         // does not exist yet reads as 0, not no-data. See the ops memory for the investigation.
     }
 
-    /** Record one terminal verdict. Never throws — must not break the verdict transaction. */
-    public void recordVerdict(int status, LocalDateTime createdAt) {
+    /**
+     * Record one terminal verdict. A rejudge counts but is no latency sample: its row keeps the original submit's
+     * {@code createdAt}. Never throws — must not break the verdict transaction.
+     */
+    public void recordVerdict(int status, LocalDateTime createdAt, boolean rejudge) {
         try {
-            latencyTimer.record(Duration.between(createdAt, LocalDateTime.now()));
             registry.counter("oj.verdict", "status", statusName(status)).increment();
+            if (!rejudge) {
+                latencyTimer.record(Duration.between(createdAt, LocalDateTime.now()));
+            }
         } catch (Exception e) {
             log.warn("Failed to record verdict metrics: {}", e.getMessage());
         }

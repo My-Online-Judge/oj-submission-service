@@ -21,6 +21,7 @@ import java.util.UUID;
 
 import static org.mockito.Mockito.mock;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.never;
@@ -47,10 +48,12 @@ class JudgeResultConsumerPublishAfterCommitTest {
     void withActiveTransaction_publishesOnlyAfterCommit() {
         UUID id = UUID.randomUUID();
         Submission s = Submission.builder().problemId(UUID.randomUUID())
-                .status(SubmissionResult.PENDING.getValue())
+                .status(SubmissionResult.ACCEPTED.getValue())
                 .createdAt(LocalDateTime.now())
                 .build();
         s.setId(id);
+        when(submissionRepository.applyVerdict(eq(id), anyInt(), any(), any(), anyInt(), any(), any(), any(), any()))
+                .thenReturn(1);
         when(submissionRepository.findById(id)).thenReturn(Optional.of(s));
 
         // Real deferral logic; the wire-level publish itself is stubbed (no Redis here).
@@ -69,7 +72,8 @@ class JudgeResultConsumerPublishAfterCommitTest {
             consumer.onJudged(e);
 
             // The state write happens inside the transaction as before…
-            verify(submissionRepository).save(s);
+            verify(submissionRepository).applyVerdict(eq(id), eq(SubmissionResult.ACCEPTED.getValue()), eq(0),
+                    eq(12), eq(15), eq(3072L), any(), any(), any());
             // …but the publish must NOT have fired yet: the tx has not committed.
             verify(verdictPubSub, never()).publish(any());
 
@@ -86,5 +90,5 @@ class JudgeResultConsumerPublishAfterCommitTest {
 
     // The no-transaction path (unit tests, direct calls) publishing immediately is covered by
     // VerdictPubSubTest.publishAfterCommit_withoutTransaction_publishesImmediately and
-    // JudgeResultConsumerTest.appliesVerdict_whenPending — not duplicated here.
+    // JudgeResultConsumerTest.appliesVerdictThroughTheConditionalWrite — not duplicated here.
 }

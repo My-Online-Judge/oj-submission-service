@@ -44,4 +44,17 @@ public enum SubmissionResult {
     public static boolean isTerminal(int status) {
         return status != PENDING.getValue() && status != JUDGING.getValue();
     }
+
+    /** A status a verdict may carry: present, one of the known values, and neither PENDING nor JUDGING. */
+    public static boolean isTerminalVerdict(Integer status) {
+        if (status == null || !isTerminal(status)) {
+            return false;
+        }
+        for (SubmissionResult result : values()) {
+            if (result.getValue() == status) {
+                return true;
+            }
+        }
+        return false;
+    }
 }

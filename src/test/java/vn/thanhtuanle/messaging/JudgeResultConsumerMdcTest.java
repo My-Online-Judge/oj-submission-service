@@ -2,7 +2,6 @@ package vn.thanhtuanle.messaging;
 
 import vn.thanhtuanle.messaging.outbox.OutboxWriter;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
 import org.slf4j.MDC;
 import vn.thanhtuanle.common.enums.SubmissionResult;
 import vn.thanhtuanle.entity.Submission;
@@ -17,6 +16,8 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 class JudgeResultConsumerMdcTest {
@@ -29,8 +30,9 @@ class JudgeResultConsumerMdcTest {
         UUID id = UUID.randomUUID();
         Submission sub = new Submission();
         sub.setProblemId(UUID.randomUUID());
-        sub.setStatus(SubmissionResult.PENDING.getValue());
+        sub.setStatus(SubmissionResult.ACCEPTED.getValue());
         sub.setCreatedAt(LocalDateTime.now().minusSeconds(2));
+        when(repo.applyVerdict(eq(id), anyInt(), any(), any(), anyInt(), any(), any(), any(), any())).thenReturn(1);
         when(repo.findById(id)).thenReturn(Optional.of(sub));
 
         AtomicReference<String> mdcDuring = new AtomicReference<>();

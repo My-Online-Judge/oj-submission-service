@@ -15,6 +15,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import vn.thanhtuanle.entity.Submission;
+import vn.thanhtuanle.judge.dto.JudgeResultDto;
 
 @Repository
 public interface SubmissionRepository extends JpaRepository<Submission, UUID> {
@@ -86,6 +87,23 @@ public interface SubmissionRepository extends JpaRepository<Submission, UUID> {
     @Query("UPDATE Submission s SET s.status = 7, s.judgingStartedAt = :startedAt, s.updatedAt = :now "
             + "WHERE s.id = :id AND s.status IN (6, 7)")
     int applyStarted(@Param("id") UUID id, @Param("startedAt") LocalDateTime startedAt,
+                     @Param("now") LocalDateTime now);
+
+    /**
+     * Records a verdict over a PENDING or JUDGING submission only. A finished submission (a duplicate or late verdict,
+     * or one reconcile already failed) and an unknown id are left alone: 0 rows. The persistence context is flushed
+     * before and cleared after, so a following read sees the written row.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            UPDATE Submission s
+            SET s.status = :status, s.result = :result, s.cpuTime = :cpuTime, s.time = :time, s.memory = :memory,
+                s.errorMessage = :errorMessage, s.details = :details, s.updatedAt = :now
+            WHERE s.id = :id AND s.status IN (6, 7)
+            """)
+    int applyVerdict(@Param("id") UUID id, @Param("status") int status, @Param("result") Integer result,
+                     @Param("cpuTime") Integer cpuTime, @Param("time") int time, @Param("memory") Long memory,
+                     @Param("errorMessage") String errorMessage, @Param("details") List<JudgeResultDto> details,
                      @Param("now") LocalDateTime now);
 
     /** The submission with its language loaded, for mapping outside a transaction (VerdictPush). */

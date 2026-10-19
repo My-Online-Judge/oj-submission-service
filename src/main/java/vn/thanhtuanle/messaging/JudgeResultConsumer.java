@@ -22,6 +22,8 @@ import java.util.UUID;
 @Slf4j
 public class JudgeResultConsumer {
 
+    static final int MAX_ERROR_MESSAGE_CHARS = 65536;
+
     private final SubmissionRepository submissionRepository;
     private final VerdictPubSub verdictPubSub;
     private final OjMetrics ojMetrics;
@@ -53,7 +55,11 @@ public class JudgeResultConsumer {
             submission.setCpuTime(event.getCpuTime());
             submission.setTime(event.getRealTime());
             submission.setMemory(event.getMemory());
-            submission.setErrorMessage(event.getErrorMessage());
+            String errorMessage = event.getErrorMessage();
+            if (errorMessage != null && errorMessage.length() > MAX_ERROR_MESSAGE_CHARS) {
+                errorMessage = errorMessage.substring(0, MAX_ERROR_MESSAGE_CHARS);
+            }
+            submission.setErrorMessage(errorMessage);
             submission.setDetails(event.getDetails());
             submissionRepository.save(submission);
             // Same transaction as the verdict: the fact is announced if and only if it was recorded.

@@ -28,7 +28,8 @@ spring:
   grpc:
     client:
       channels:
-        # problem-service's internal API (GetJudgeSpec, GetSampleTestCases); oj-net only, plaintext.
+        # problem-service's internal API (GetJudgeSpec, GetSampleTestCases); oj-net only, plaintext unless the tls
+        # profile is on (application-tls.yml).
         problem-service:
           address: ${PROBLEM_GRPC_ADDRESS:static://localhost:9090}
           negotiation-type: plaintext
@@ -94,7 +95,8 @@ oj:
       # the first request that carries a token.
       jwks-uri: ${OJ_JWKS_URI:http://identity-service:8000/.well-known/jwks.json}
   problems:
-    # Shared with problem-service (its oj.rpc.token); sent as x-oj-service-token on every call.
+    # Optional: the tls profile authenticates this service by its certificate. When set, shared with problem-service
+    # (its oj.rpc.token) and sent as x-oj-service-token on every call.
     rpc-token: ${PROBLEM_RPC_TOKEN:}
     # Per attempt; UNAVAILABLE is retried twice (ProblemServiceResilience).
     deadline: 2s

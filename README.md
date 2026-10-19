@@ -14,7 +14,8 @@ service of its own with its own database in sub-project 3b.
 
 Configuration comes from `judge-deployment/.env.submission` (see `.env.submission.example` there): its own
 Postgres (`submission-db`, schema by Flyway `V1` = the live tables, `V2` = the languages), plus Kafka, Redis, the
-judge-server token, problem-service's gRPC address and service token, and the JWKS URI through the compose file.
+judge-server token and problem-service's gRPC address through the compose file. Under the `tls` profile the gRPC
+calls use mutual TLS: this service's certificate (CN `submission-service`) replaced the service token.
 
 Events: `submission.requested` (to the workers) and `oj.submission.events` (`SubmissionVerdictRecorded`, to
 problem-service's statistics) leave through `t_outbox`; alert `OutboxBacklogStale` fires when a row waits over a

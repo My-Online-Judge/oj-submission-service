@@ -12,6 +12,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.grpc.client.GrpcChannelBuilderCustomizer;
 import org.springframework.grpc.client.GrpcChannelFactory;
+import org.springframework.util.StringUtils;
 import vn.thanhtuanle.oj.common.grpc.ServiceTokenClientInterceptor;
 import vn.thanhtuanle.oj.common.grpc.problem.v1.ProblemInternalGrpc;
 
@@ -19,8 +20,9 @@ import java.time.Duration;
 
 /**
  * Wires {@link ProblemCatalog} to problem-service: the channel {@code problem-service}
- * ({@code spring.grpc.client.channels.problem-service.*}), the service token, the deadline per attempt and
- * the shared retry and circuit breaker, whose state is exported as {@code resilience4j_circuitbreaker_state}.
+ * ({@code spring.grpc.client.channels.problem-service.*}; mutual TLS under the tls profile), the service token when
+ * one is set, the deadline per attempt and the shared retry and circuit breaker, whose state is exported as
+ * {@code resilience4j_circuitbreaker_state}.
  */
 @Configuration
 public class ProblemServiceClientConfig {
@@ -60,9 +62,10 @@ public class ProblemServiceClientConfig {
             CircuitBreakerRegistry circuitBreakers,
             @Value("${oj.problems.rpc-token:}") String token,
             @Value("${oj.problems.deadline:2s}") Duration deadline) {
-        ProblemInternalGrpc.ProblemInternalBlockingStub stub = ProblemInternalGrpc
-                .newBlockingStub(problemServiceChannel)
-                .withInterceptors(new ServiceTokenClientInterceptor(token));
+        ProblemInternalGrpc.ProblemInternalBlockingStub stub = ProblemInternalGrpc.newBlockingStub(problemServiceChannel);
+        if (StringUtils.hasText(token)) {
+            stub = stub.withInterceptors(new ServiceTokenClientInterceptor(token));
+        }
         return new GrpcProblemCatalog(stub, circuitBreakers.circuitBreaker(ProblemServiceResilience.NAME),
                 RetryRegistry.of(ProblemServiceResilience.retryConfig()).retry(ProblemServiceResilience.NAME), deadline,
                 problemServiceRecovery);

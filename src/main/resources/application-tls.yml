@@ -27,6 +27,16 @@ spring:
       protocol: SSL
     ssl:
       bundle: oj
+  grpc:
+    client:
+      channels:
+        # problem-service's internal API: TLS, this service's certificate presented (problem-service allows only the
+        # CN submission-service), problem-service's verified against the CA and the address's host
+        # (static://problem-service:9090, so its SAN). The certificate replaces the service token.
+        problem-service:
+          negotiation-type: tls
+          ssl:
+            bundle: oj
 # The API (server.port) and actuator (management.server.port) ports serve TLS and require a CA-signed client
 # certificate. On the API port only the CNs below get past oj-common's PeerCertificateFilter (403 otherwise); the
 # actuator port has no CN allowlist (Prometheus and the healthcheck present their own certificates). Management SSL

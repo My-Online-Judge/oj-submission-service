@@ -7,5 +7,6 @@ used outside tests. Production certificates are issued by `pki.sh issue-all` and
 - `ca.crt`: the test CA
 - `server.*`: a server leaf (CN=localhost, SAN localhost / 127.0.0.1)
 - `api-gateway.*`: a client leaf signed by the CA
+- `submission-service.*`: this service's own leaf signed by the CA (its client certificate to problem-service)
 - `tls-probe.*`: a client leaf signed by the CA whose CN is in no allowlist
 - `rogue-client.*`: a client leaf signed by a different (discarded) CA, which the service must refuse

@@ -41,6 +41,7 @@ import vn.thanhtuanle.language.LanguageRepository;
 
 
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -158,10 +159,11 @@ public class SubmissionService {
         // maps after it.
         Page<Submission> found = submissionRepository.findAll(
                 SubmissionSpecifications.matching(q.problemSlug(), userId, q.result(), q.from(), q.to()), pageable);
-        Map<UUID, PublicUser> users = publicUserClient.byIds(
-                found.getContent().stream().map(Submission::getUserId).collect(Collectors.toSet()));
+        // user_id is nullable (rows copied from the monolith): such a row is listed with no username.
+        Map<UUID, PublicUser> users = publicUserClient.byIds(found.getContent().stream().map(Submission::getUserId)
+                .filter(Objects::nonNull).collect(Collectors.toSet()));
         return PageResponse.of(found.map(s -> {
-            PublicUser u = users.get(s.getUserId());
+            PublicUser u = s.getUserId() == null ? null : users.get(s.getUserId());
             return new SubmissionListItemDto(s.getId(), s.getCreatedAt(), s.getUserId(), u == null ? null : u.username(),
                     s.getProblemSlug(), s.getLanguage().getName(), s.getStatus(), s.getCpuTime(), s.getMemory());
         }));

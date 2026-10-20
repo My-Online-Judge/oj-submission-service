@@ -24,8 +24,8 @@ public class ProblemRejudgeController {
 
     @PostMapping("/{slug}/rejudge")
     @PreAuthorize("hasAuthority('submission:rejudge')")
-    @Operation(summary = "Rejudge the newest 500 finished submissions of a problem, optionally of one verdict "
-            + "(admin only)")
+    @Operation(summary = "Rejudge the newest 500 finished submissions of a problem, optionally of one verdict; on a "
+            + "busy judge queue only the newest that fit (admin only)")
     public ApiResponse<RejudgeQueued> rejudge(@PathVariable String slug,
                                               @RequestParam(required = false) Integer status) {
         log.info("Rejudge requested for problem {} (status {})", slug, status);

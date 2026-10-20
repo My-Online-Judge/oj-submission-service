@@ -33,7 +33,8 @@ import java.util.UUID;
  * transaction, and only the reset and its judge request in the outbox are one transaction. The reset is conditional
  * (never over PENDING or JUDGING), so a submission is never queued twice by concurrent rejudges.
  *
- * <p>A problem rejudge takes at most {@link #MAX_BATCH} of its newest finished submissions, optionally of one verdict.
+ * <p>A problem rejudge takes at most {@link #MAX_BATCH} of its newest finished submissions, optionally of one verdict,
+ * and of those only as many as the judge queue has free slots: on a busy queue, the newest that fit.
  */
 @Service
 @RequiredArgsConstructor
@@ -83,7 +84,8 @@ public class RejudgeService {
 
     /**
      * Rejudges the newest {@link #MAX_BATCH} finished submissions of the problem, or of those only the ones with
-     * verdict {@code status}. Returns how many were queued: a candidate that a concurrent rejudge queued meanwhile is
+     * verdict {@code status}; when the judge queue has fewer free slots, only that many of the newest (503 QUEUE_FULL
+     * when it has none). Returns how many were queued: a candidate that a concurrent rejudge queued meanwhile is
      * neither counted nor queued again, and its reserved slot is given back.
      */
     public RejudgeQueued rejudgeProblem(String slug, Integer status) {
@@ -98,12 +100,13 @@ public class RejudgeService {
             return new RejudgeQueued(0);
         }
 
-        int reserved = candidates.size();
-        admission.admit(reserved);
+        int reserved = admission.admitUpTo(candidates.size());
+        // Newest first: a queue with room for only some takes the newest.
+        List<UUID> taken = candidates.subList(0, reserved);
         Integer queued;
         try {
             JudgeSpec spec = problemCatalog.judgeSpec(slug, true);
-            queued = transactions.execute(tx -> resetAndQueue(candidates, spec));
+            queued = transactions.execute(tx -> resetAndQueue(taken, spec));
         } catch (RuntimeException | Error e) {
             admission.release(reserved);
             throw e;
@@ -112,7 +115,8 @@ public class RejudgeService {
         if (count < reserved) {
             admission.release(reserved - count);
         }
-        log.info("Problem {} rejudge queued {} of {} submission(s)", slug, count, reserved);
+        log.info("Problem {} rejudge queued {} of {} submission(s) ({} had queue room)", slug, count,
+                candidates.size(), reserved);
         return new RejudgeQueued(count);
     }
 

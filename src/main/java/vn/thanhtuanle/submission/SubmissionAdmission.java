@@ -9,11 +9,11 @@ import vn.thanhtuanle.metrics.OjMetrics;
 import vn.thanhtuanle.oj.common.web.error.RateLimitedException;
 
 /**
- * Refuses work the judge queue cannot take. Anything that queues judgements (a submit, a rejudge of one submission or
- * of a batch) reserves its slots in the cached queue depth first, all of them or none; a refusal is 503 QUEUE_FULL
- * with {@code Retry-After: 30}. Work that fails after {@link #admit} gives its slots back with {@link #release}; the
- * next queue-depth refresh replaces every reservation with the real count anyway. Each refusal counts in
- * {@code oj.admission.refused}.
+ * Refuses work the judge queue cannot take. Anything that queues judgements reserves its slots in the cached queue
+ * depth first: a submit or a rejudge of one submission all of them or none ({@link #admit}), a problem rejudge as many
+ * as are free ({@link #admitUpTo}). A refusal is 503 QUEUE_FULL with {@code Retry-After: 30}. Work that fails after
+ * reserving gives its slots back with {@link #release}; the next queue-depth refresh replaces every reservation with
+ * the real count anyway. Each refusal counts in {@code oj.admission.refused}.
  */
 @Component
 public class SubmissionAdmission {
@@ -45,7 +45,23 @@ public class SubmissionAdmission {
         }
     }
 
-    /** Gives back {@code count} slots that {@link #admit} reserved for work that was then not queued. */
+    /**
+     * Reserves as many of {@code wanted} slots as are free, up to all of them, and returns how many; throws QUEUE_FULL
+     * having reserved nothing when none is free. Zero always passes.
+     */
+    public int admitUpTo(int wanted) {
+        if (wanted <= 0) {
+            return 0;
+        }
+        int reserved = metrics.reserveQueueSlotsUpTo(wanted, maxQueueDepth);
+        if (reserved == 0) {
+            refused.increment();
+            throw new RateLimitedException(ErrorCode.QUEUE_FULL, RETRY_AFTER_SECONDS);
+        }
+        return reserved;
+    }
+
+    /** Gives back {@code count} slots that {@link #admit} or {@link #admitUpTo} reserved for work then not queued. */
     public void release(int count) {
         if (count > 0) {
             metrics.releaseQueueSlots(count);

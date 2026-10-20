@@ -71,6 +71,30 @@ class SubmissionAdmissionTest {
     }
 
     @Test
+    void admitUpToReservesOnlyTheFreeSlots() {
+        SubmissionAdmission cap200 = new SubmissionAdmission(metrics, registry, 200);
+        queued(190);
+
+        assertThat(cap200.admitUpTo(50)).isEqualTo(10);
+        assertThat(metrics.queueDepth()).isEqualTo(200);
+
+        RateLimitedException refused = catchThrowableOfType(() -> cap200.admitUpTo(5), RateLimitedException.class);
+        assertThat(refused).isNotNull();
+        assertThat(refused.getErrorCode()).isEqualTo(ErrorCode.QUEUE_FULL);
+        assertThat(refused.getRetryAfterSeconds()).isEqualTo(30);
+        assertThat(metrics.queueDepth()).as("nothing reserved").isEqualTo(200);
+        assertThat(refusals()).isEqualTo(1);
+    }
+
+    @Test
+    void admitUpToTakesAllItWantsWhenThereIsRoom() {
+        queued(100);
+
+        assertThat(admission.admitUpTo(50)).isEqualTo(50);
+        assertThat(metrics.queueDepth()).isEqualTo(150);
+    }
+
+    @Test
     void zeroAlwaysPasses() {
         queued(600);  // over the limit already: a reservation of nothing still passes
 

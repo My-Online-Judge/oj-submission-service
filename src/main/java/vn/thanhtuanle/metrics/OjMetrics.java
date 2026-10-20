@@ -99,6 +99,23 @@ public class OjMetrics {
     }
 
     /**
+     * Takes as many of {@code wanted} slots as the queue has free within {@code max}, in one compare-and-set, and
+     * returns how many it took: 0 (taking none) when the queue is full.
+     */
+    public int reserveQueueSlotsUpTo(int wanted, long max) {
+        while (true) {
+            long depth = queueDepth.get();
+            int take = (int) Math.max(0, Math.min(wanted, max - depth));
+            if (take == 0) {
+                return 0;
+            }
+            if (queueDepth.compareAndSet(depth, depth + take)) {
+                return take;
+            }
+        }
+    }
+
+    /**
      * Gives back slots reserved for work that was then not queued. Never below zero: a refresh in between has already
      * dropped the reservation, and the depth is at most one window low until the next one.
      */

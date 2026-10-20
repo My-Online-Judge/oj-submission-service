@@ -2,6 +2,7 @@ package vn.thanhtuanle.submission;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -28,16 +29,16 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
- * Rejudging a problem on real Postgres: the newest 500 finished submissions (optionally of one verdict) are reset in
- * one transaction, each with one judge request in the outbox. Only rows actually reset are counted and queued; the
- * queue slots reserved for the others, or for a batch that then fails, are given back.
+ * Rejudging a problem on real Postgres: the newest 500 finished submissions (optionally of one verdict), or fewer when
+ * the judge queue has fewer free slots, are reset in one transaction, each with one judge request in the outbox. Only
+ * rows actually reset are counted and queued; the queue slots reserved for the others, or for a batch that then
+ * fails, are given back.
  */
 class ProblemRejudgeTest extends PostgresTest {
 
@@ -59,6 +60,11 @@ class ProblemRejudgeTest extends PostgresTest {
 
     private final String slug = "rejudge-problem-" + UUID.randomUUID();
     private final UUID problemId = UUID.randomUUID();
+
+    @BeforeEach
+    void theQueueHasRoom() {
+        when(admission.admitUpTo(anyInt())).thenAnswer(call -> call.getArgument(0));
+    }
 
     @AfterEach
     void removeRows() {
@@ -162,7 +168,7 @@ class ProblemRejudgeTest extends PostgresTest {
         assertThat(objectMapper.readTree(payload).get("test_case_id").asText()).isEqualTo(slug + "__newhash123");
         assertThat(inTransaction).as("the problems call holds no transaction").containsExactly(false);
         verify(problemCatalog).judgeSpec(slug, true);
-        verify(admission).admit(500);
+        verify(admission).admitUpTo(500);
         verify(admission, never()).release(anyInt());
     }
 
@@ -180,7 +186,7 @@ class ProblemRejudgeTest extends PostgresTest {
         assertUntouched(ids.get(2), TLE);
         assertUntouched(ids.get(4), PENDING);
         assertUntouched(ids.get(5), AC);
-        verify(admission).admit(2);
+        verify(admission).admitUpTo(2);
     }
 
     @Test
@@ -217,10 +223,30 @@ class ProblemRejudgeTest extends PostgresTest {
     }
 
     @Test
-    void aBatchTheQueueCannotTakeIs503AndChangesNothing() {
+    void aBusyQueueRejudgesOnlyTheNewestThatFit() {
+        List<UUID> ids = insert(repeat(AC, 50));
+        when(admission.admitUpTo(50)).thenReturn(10);
+        when(problemCatalog.judgeSpec(slug, true)).thenReturn(currentSpec());
+
+        RejudgeQueued result = rejudgeService.rejudgeProblem(slug, null);
+
+        assertThat(result.queued()).isEqualTo(10);
+        for (UUID newest : ids.subList(40, 50)) {
+            assertRequeued(newest);
+        }
+        for (UUID older : ids.subList(0, 40)) {
+            assertUntouched(older, AC);
+        }
+        assertThat(resetRows()).isEqualTo(10);
+        assertThat(requestsForTheProblem()).isEqualTo(10);
+        verify(admission, never()).release(anyInt());
+    }
+
+    @Test
+    void aFullQueueStillRefuses() {
         insert(repeat(AC, 200));
-        doThrow(new RateLimitedException(ErrorCode.QUEUE_FULL, SubmissionAdmission.RETRY_AFTER_SECONDS))
-                .when(admission).admit(200);
+        when(admission.admitUpTo(200))
+                .thenThrow(new RateLimitedException(ErrorCode.QUEUE_FULL, SubmissionAdmission.RETRY_AFTER_SECONDS));
 
         assertThatThrownBy(() -> rejudgeService.rejudgeProblem(slug, null))
                 .isInstanceOfSatisfying(RateLimitedException.class,
@@ -257,7 +283,7 @@ class ProblemRejudgeTest extends PostgresTest {
         assertUntouched(ids.get(0), AC);
         assertUntouched(ids.get(1), WA);
         assertUntouched(ids.get(2), TLE);
-        verify(admission).admit(3);
+        verify(admission).admitUpTo(3);
         verify(admission).release(3);
     }
 
@@ -277,7 +303,7 @@ class ProblemRejudgeTest extends PostgresTest {
         assertRequeued(ids.get(2));
         assertThat(row(ids.get(1)).get("rejudge_count")).isEqualTo(0);
         assertThat(requests(ids.get(1))).isZero();
-        verify(admission).admit(3);
+        verify(admission).admitUpTo(3);
         verify(admission).release(1);
     }
 }

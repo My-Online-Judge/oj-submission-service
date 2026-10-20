@@ -162,6 +162,22 @@ class JudgeResultConsumerTest {
     }
 
     @Test
+    void aTombstoneThrowsInvalidVerdictException() {
+        // A record without a value: nothing a retry could ever apply.
+        assertThatThrownBy(() -> consumer.onJudged(null)).isInstanceOf(InvalidVerdictException.class);
+        verifyNoInteractions(submissionRepository, outboxWriter, verdictPubSub, ojMetrics);
+    }
+
+    @Test
+    void aNullSubmissionIdThrowsInvalidVerdictException() {
+        SubmissionJudgedEvent event = SubmissionJudgedEvent.builder()
+                .status(SubmissionResult.ACCEPTED.getValue()).build();
+
+        assertThatThrownBy(() -> consumer.onJudged(event)).isInstanceOf(InvalidVerdictException.class);
+        verifyNoInteractions(submissionRepository, outboxWriter, verdictPubSub, ojMetrics);
+    }
+
+    @Test
     void nullTimesAndMemoryAreStoredAsZeroOrNull() {
         UUID id = UUID.randomUUID();
         oneRowUpdated(id, written(id, 0, 0));

@@ -33,6 +33,9 @@ public class JudgeResultConsumer {
     @KafkaListener(topics = KafkaTopics.SUBMISSION_JUDGED, groupId = "judge-api-results")
     @Transactional
     public void onJudged(SubmissionJudgedEvent event) {
+        if (event == null) {
+            throw new InvalidVerdictException("Verdict record without a value (a tombstone)", null);
+        }
         MDC.put("submissionId", event.getSubmissionId());
         try {
             UUID id = parseId(event.getSubmissionId());

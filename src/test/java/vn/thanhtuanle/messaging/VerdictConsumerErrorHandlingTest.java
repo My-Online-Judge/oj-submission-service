@@ -1,5 +1,7 @@
 package vn.thanhtuanle.messaging;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -10,6 +12,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.TransientDataAccessResourceException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
@@ -37,12 +40,15 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mockingDetails;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 /**
  * The listeners' failures told apart, end to end on Boot's container factory: a database that is briefly away is
- * waited out until the verdict lands; a verdict no retry can ever apply goes to the dead-letter topic at once, on its
- * partition, and is counted; a start this service cannot read is dropped (a start is advisory), never dead-lettered.
+ * waited out until the verdict lands; a verdict no retry can ever apply (unreadable, a tombstone, a submissionId that
+ * is not a UUID, a constraint violation) goes to the dead-letter topic at once, on its partition, and is counted, in
+ * JSON a replay can send back as it is; a start this service cannot read is dropped (a start is advisory), never
+ * dead-lettered.
  *
  * <p>On Postgres: a verdict commits together with its outbox row, and H2's schema (built from the entities) holds no
  * outbox payload over 255 bytes.
@@ -108,22 +114,19 @@ class VerdictConsumerErrorHandlingTest extends PostgresTest {
         return meters.counter(DEAD_LETTERED).count();
     }
 
-    /**
-     * The partition of each record now on the dead-letter topic with this key, read from the beginning up to the
-     * current end.
-     */
-    private List<Integer> deadLetters(String key) {
+    /** Each record now on the dead-letter topic with this key, read from the beginning up to the current end. */
+    private List<ConsumerRecord<String, String>> deadLetters(String key) {
         try (Consumer<String, String> reader = dlqReaders.createConsumer()) {
             List<TopicPartition> partitions = reader.partitionsFor(KafkaTopics.SUBMISSION_JUDGED_DLQ).stream()
                     .map(p -> new TopicPartition(p.topic(), p.partition())).toList();
             reader.assign(partitions);
             reader.seekToBeginning(partitions);
             Map<TopicPartition, Long> end = reader.endOffsets(partitions);
-            List<Integer> keyed = new ArrayList<>();
+            List<ConsumerRecord<String, String>> keyed = new ArrayList<>();
             while (partitions.stream().anyMatch(tp -> reader.position(tp) < end.get(tp))) {
                 for (ConsumerRecord<String, String> r : reader.poll(Duration.ofMillis(100))) {
                     if (key.equals(r.key())) {
-                        keyed.add(r.partition());
+                        keyed.add(r);
                     }
                 }
             }
@@ -161,7 +164,8 @@ class VerdictConsumerErrorHandlingTest extends PostgresTest {
         worker.send(KafkaTopics.SUBMISSION_JUDGED, partition, key, "not json");
 
         await().atMost(Duration.ofSeconds(10))
-                .untilAsserted(() -> assertThat(deadLetters(key)).containsExactly(partition));
+                .untilAsserted(() -> assertThat(deadLetters(key)).extracting(ConsumerRecord::partition)
+                        .containsExactly(partition));
         assertThat(deadLettered()).isEqualTo(before + 1);
     }
 
@@ -175,6 +179,62 @@ class VerdictConsumerErrorHandlingTest extends PostgresTest {
         // Were it retried, 1 s doubling for 5 minutes would hold it far longer than this.
         await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> assertThat(deadLetters(key)).hasSize(1));
         assertThat(deadLettered()).isEqualTo(before + 1);
+    }
+
+    @Test
+    void aTombstoneIsDeadLetteredAtOnce() {
+        String key = "tombstone-" + UUID.randomUUID();
+        double before = deadLettered();
+
+        worker.send(KafkaTopics.SUBMISSION_JUDGED, key, null);
+
+        await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> assertThat(deadLetters(key)).hasSize(1));
+        assertThat(deadLettered()).isEqualTo(before + 1);
+    }
+
+    @Test
+    void aConstraintViolationIsDeadLetteredAtOnce() {
+        UUID id = insertPending();
+        double before = deadLettered();
+        doThrow(new DataIntegrityViolationException("value too long for type character varying(255)"))
+                .when(submissions).applyVerdict(any(), anyInt(), any(), any(), anyInt(), any(), any(), any(), any());
+
+        worker.send(KafkaTopics.SUBMISSION_JUDGED, id.toString(), verdictJson(id.toString()));
+
+        // Were it retried, 1 s doubling for 5 minutes would hold it (and every verdict behind it) far longer.
+        await().atMost(Duration.ofSeconds(10))
+                .untilAsserted(() -> assertThat(deadLetters(id.toString())).hasSize(1));
+        verify(submissions, times(1))
+                .applyVerdict(any(), anyInt(), any(), any(), anyInt(), any(), any(), any(), any());
+        assertThat(deadLettered()).isEqualTo(before + 1);
+        assertThat(status(id)).isEqualTo(SubmissionResult.PENDING.getValue());
+    }
+
+    @Test
+    void aDeadLetterKeepsTheWorkersFieldNames() throws Exception {
+        // Not a UUID, so dead-lettered at once; the dead letter is the parsed SubmissionJudgedEvent written back out.
+        String key = "replayable-" + UUID.randomUUID();
+        String details = ", \"details\": [{\"test_case\": \"1\", \"result\": 0, \"cpu_time\": 3, \"real_time\": 4, "
+                + "\"memory\": 512, \"exit_code\": 0, \"output_md5\": \"d41d8cd98f00b204e9800998ecf8427e\"}]}";
+        String verdict = verdictJson(key).replaceFirst("}$", details);
+
+        worker.send(KafkaTopics.SUBMISSION_JUDGED, key, verdict);
+
+        await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> assertThat(deadLetters(key)).hasSize(1));
+        // scripts/replay-dlq.sh sends the value back to submission.judged as it is: the worker's names must survive.
+        JsonNode dead = new ObjectMapper().readTree(deadLetters(key).get(0).value());
+        assertThat(dead.path("submissionId").asText()).isEqualTo(key);
+        assertThat(dead.path("cpu_time").asInt()).isEqualTo(5);
+        assertThat(dead.path("real_time").asInt()).isEqualTo(7);
+        assertThat(dead.has("error_message")).isTrue();
+        assertThat(dead.has("cpuTime") || dead.has("realTime") || dead.has("errorMessage")).isFalse();
+        JsonNode testCase = dead.path("details").path(0);
+        assertThat(testCase.path("test_case").asText()).isEqualTo("1");
+        assertThat(testCase.path("cpu_time").asInt()).isEqualTo(3);
+        assertThat(testCase.path("real_time").asInt()).isEqualTo(4);
+        assertThat(testCase.path("exit_code").asInt()).isZero();
+        assertThat(testCase.path("output_md5").asText()).isEqualTo("d41d8cd98f00b204e9800998ecf8427e");
+        assertThat(testCase.has("testCase") || testCase.has("cpuTime") || testCase.has("outputMd5")).isFalse();
     }
 
     @Test

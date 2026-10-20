@@ -58,7 +58,9 @@ public class SubmissionStartedConsumer {
                     ? submissionRepository.applyStarted(id, startedAt, now)
                     : submissionRepository.applyStartedOfGeneration(id, startedAt, now, generation);
             if (updated == 0) {
-                log.debug("Ignoring the start of a finished, unknown or since rejudged submission {}", id);
+                log.debug("Ignoring the start of a finished, unknown or since rejudged submission {} "
+                        + "(message generation {}, row generation {})", id, generation,
+                        submissionRepository.findRejudgeCountById(id));
             }
         } finally {
             MDC.remove("submissionId");

@@ -69,7 +69,8 @@ public class JudgeResultConsumer {
                             event.getCpuTime(), time, event.getMemory(), errorMessage, event.getDetails(), now,
                             generation);
             if (updated == 0) {
-                log.info("late or duplicate verdict for submission {}", id);
+                log.info("late or duplicate verdict for submission {} (message generation {}, row generation {})", id,
+                        generation, submissionRepository.findRejudgeCountById(id));
                 return;
             }
             Submission submission = submissionRepository.findById(id).orElseThrow(

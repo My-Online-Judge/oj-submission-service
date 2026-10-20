@@ -136,7 +136,7 @@ public interface SubmissionRepository extends JpaRepository<Submission, UUID> {
     int resetForRejudge(@Param("id") UUID id, @Param("now") LocalDateTime now);
 
     /**
-     * The submission's committed {@code rejudge_count}, read fresh (a scalar projection, like {@link #findStatusById}).
+     * The submission's current {@code rejudge_count} as this transaction sees it (its own uncommitted reset included), read fresh (a scalar projection, like {@link #findStatusById}).
      * Read right after {@link #resetForRejudge} in the same transaction, it is the generation that reset set.
      */
     @Query("select s.rejudgeCount from Submission s where s.id = :id")

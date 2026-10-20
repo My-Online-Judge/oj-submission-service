@@ -6,9 +6,14 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
+import org.springframework.http.MediaType;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.support.TransactionOperations;
 import vn.thanhtuanle.common.exception.ErrorCode;
+import vn.thanhtuanle.common.exception.GlobalExceptionHandler;
+import vn.thanhtuanle.oj.common.web.error.AppException;
 import vn.thanhtuanle.oj.common.web.error.RateLimitedException;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -38,7 +43,11 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @ExtendWith(MockitoExtension.class)
 class SubmissionServiceSubmitTest {
@@ -69,7 +78,7 @@ class SubmissionServiceSubmitTest {
     }
 
     private void submitTo(String slug) {
-        when(problemCatalog.judgeSpec(eq(slug), anyBoolean())).thenThrow(new ProblemNotFoundException());
+        when(problemCatalog.judgeSpec(eq(slug), anyBoolean(), isNull())).thenThrow(new ProblemNotFoundException());
         assertThatThrownBy(() -> submissionService.submit(SubmissionRequestDto.builder()
                 .sourceCode("int main(){}").languageIdentifier("cpp").problemSlug(slug).build()))
                 .isInstanceOf(ProblemNotFoundException.class);
@@ -79,14 +88,14 @@ class SubmissionServiceSubmitTest {
     void problemEditorsMayJudgeInactiveProblems() {
         signInWith("problem:update");
         submitTo("hidden");
-        verify(problemCatalog).judgeSpec("hidden", true);
+        verify(problemCatalog).judgeSpec("hidden", true, null);
     }
 
     @Test
     void ordinaryUsersCannot() {
         signInWith("submission:read-any", "problem:read");
         submitTo("hidden");
-        verify(problemCatalog).judgeSpec("hidden", false);
+        verify(problemCatalog).judgeSpec("hidden", false, null);
     }
 
     @Test
@@ -99,7 +108,7 @@ class SubmissionServiceSubmitTest {
         Language language = new Language();
         UUID userId = UUID.randomUUID();
 
-        when(problemCatalog.judgeSpec("a-plus-b", false)).thenReturn(spec);
+        when(problemCatalog.judgeSpec("a-plus-b", false, null)).thenReturn(spec);
         when(languageRepository.findByIdentifier("cpp")).thenReturn(Optional.of(language));
         when(currentUser.id()).thenReturn(userId);
         // simulate JPA's GenerationType.UUID assigning an id on save(), since a bare Mockito
@@ -137,8 +146,10 @@ class SubmissionServiceSubmitTest {
         doThrow(new RateLimitedException(ErrorCode.QUEUE_FULL, SubmissionAdmission.RETRY_AFTER_SECONDS))
                 .when(admission).admit(1);
 
+        // A contest submit too: the queue answers before the contest is looked at.
         assertThatThrownBy(() -> submissionService.submit(SubmissionRequestDto.builder()
-                .sourceCode("int main(){}").languageIdentifier("cpp").problemSlug("a-plus-b").build()))
+                .sourceCode("int main(){}").languageIdentifier("cpp").problemSlug("a-plus-b")
+                .contestSlug("icpc-1").build()))
                 .isInstanceOfSatisfying(RateLimitedException.class,
                         e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.QUEUE_FULL));
 
@@ -162,7 +173,7 @@ class SubmissionServiceSubmitTest {
     @Test
     void aRefusalAfterTheReservationGivesTheSlotBack() {
         // A 404 burns no cooldown, so without the release a stream of them could fill the queue for 5 s.
-        when(problemCatalog.judgeSpec("no-such-problem", false)).thenThrow(new ProblemNotFoundException());
+        when(problemCatalog.judgeSpec("no-such-problem", false, null)).thenThrow(new ProblemNotFoundException());
 
         assertThatThrownBy(() -> submissionService.submit(SubmissionRequestDto.builder()
                 .sourceCode("int main(){}").languageIdentifier("cpp").problemSlug("no-such-problem").build()))
@@ -181,7 +192,7 @@ class SubmissionServiceSubmitTest {
         Language disabled = new Language();
         disabled.setDisabled(true);
 
-        when(problemCatalog.judgeSpec("a-plus-b", false))
+        when(problemCatalog.judgeSpec("a-plus-b", false, null))
                 .thenReturn(new JudgeSpec(UUID.randomUUID(), "a-plus-b", 1000, 256L, "abc123def456"));
         when(languageRepository.findByIdentifier("javascript")).thenReturn(Optional.of(disabled));
 
@@ -194,7 +205,7 @@ class SubmissionServiceSubmitTest {
         TransactionOperations mockTransactions = mock(TransactionOperations.class);
         ReflectionTestUtils.setField(submissionService, "transactions", mockTransactions);
         UUID userId = UUID.randomUUID();
-        when(problemCatalog.judgeSpec("a-plus-b", false))
+        when(problemCatalog.judgeSpec("a-plus-b", false, null))
                 .thenReturn(new JudgeSpec(UUID.randomUUID(), "a-plus-b", 1000, 256L, "abc123def456"));
         when(languageRepository.findByIdentifier("cpp")).thenReturn(Optional.of(new Language()));
         when(currentUser.id()).thenReturn(userId);
@@ -206,5 +217,63 @@ class SubmissionServiceSubmitTest {
                 .isInstanceOf(RateLimitedException.class);
 
         verifyNoInteractions(mockTransactions);
+    }
+
+    @Test
+    void contestSubmissionStoresContestId() {
+        UUID contestId = UUID.randomUUID();
+        JudgeSpec spec = new JudgeSpec(UUID.randomUUID(), "a-plus-b", 1000, 256L, "abc123def456", contestId);
+        when(problemCatalog.judgeSpec("a-plus-b", false, "icpc-1")).thenReturn(spec);
+        when(languageRepository.findByIdentifier("cpp")).thenReturn(Optional.of(new Language()));
+        when(currentUser.id()).thenReturn(UUID.randomUUID());
+        when(submissionRepository.save(any(Submission.class))).thenAnswer(inv -> {
+            Submission s = inv.getArgument(0);
+            s.setId(UUID.randomUUID());
+            return s;
+        });
+        when(judgeService.buildRequestedEvent(any(), any(), eq(spec), any(), eq(0)))
+                .thenReturn(SubmissionRequestedEvent.builder().submissionId("x").build());
+
+        submissionService.submit(SubmissionRequestDto.builder()
+                .sourceCode("int main(){}").languageIdentifier("cpp").problemSlug("a-plus-b")
+                .contestSlug("icpc-1").build());
+
+        ArgumentCaptor<Submission> saved = ArgumentCaptor.forClass(Submission.class);
+        verify(submissionRepository).save(saved.capture());
+        assertThat(saved.getValue().getContestId()).isEqualTo(contestId);
+    }
+
+    @Test
+    void contestNotRunningIsRefusedBeforeTheCooldown() {
+        when(problemCatalog.judgeSpec("a-plus-b", false, "ended"))
+                .thenThrow(new AppException(ErrorCode.CONTEST_NOT_RUNNING));
+
+        assertThatThrownBy(() -> submissionService.submit(SubmissionRequestDto.builder()
+                .sourceCode("int main(){}").languageIdentifier("cpp").problemSlug("a-plus-b")
+                .contestSlug("ended").build()))
+                .isInstanceOfSatisfying(AppException.class,
+                        e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.CONTEST_NOT_RUNNING));
+
+        verifyNoInteractions(submissionRateLimiter, outboxWriter);
+        verify(submissionRepository, never()).save(any());
+        verify(admission).admit(1);
+        verify(admission, times(1)).release(1);
+    }
+
+    @Test
+    void badContestSlugIs400() throws Exception {
+        MockMvc mvc = MockMvcBuilders
+                .standaloneSetup(new SubmissionController(submissionService, mock(RejudgeService.class)))
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .build();
+
+        mvc.perform(post("/api/v1/submissions").contentType(MediaType.APPLICATION_JSON).content("""
+                        {"sourceCode": "int main(){}", "languageIdentifier": "cpp", "problemSlug": "a-plus-b",
+                         "contestSlug": "Not A Slug!"}
+                        """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors.contestSlug").exists());
+
+        verifyNoInteractions(judgeService, admission, problemCatalog, submissionRepository);
     }
 }

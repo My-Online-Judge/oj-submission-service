@@ -79,9 +79,9 @@ public class SubmissionService {
         admission.admit(1);
         UUID cooledDown = null;
         try {
-            // Resolved first — limits and the bundle version included — so neither an unknown problem nor one
-            // that cannot be judged burns the cooldown below.
-            JudgeSpec spec = problemCatalog.judgeSpec(req.getProblemSlug(), mayEditProblems());
+            // Resolved first — limits, the bundle version and the contest included — so neither an unknown problem,
+            // one that cannot be judged, nor a contest that is not running burns the cooldown below.
+            JudgeSpec spec = problemCatalog.judgeSpec(req.getProblemSlug(), mayEditProblems(), req.getContestSlug());
             Language language = languageRepository.findByIdentifier(req.getLanguageIdentifier())
                     .filter(l -> !l.isDisabled())
                     .orElseThrow(() -> new ResourceNotFoundException("Language not found"));
@@ -125,6 +125,7 @@ public class SubmissionService {
                 .sourceCode(req.getSourceCode())
                 .problemId(spec.problemId())
                 .problemSlug(spec.problemSlug())
+                .contestId(spec.contestId())
                 .userId(userId)
                 .language(language)
                 .time(0)

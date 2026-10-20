@@ -20,6 +20,7 @@ import vn.thanhtuanle.metrics.OjMetrics;
 import vn.thanhtuanle.submission.SubmissionRepository;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -45,15 +46,23 @@ class JudgeResultConsumerTest {
     private static final List<JudgeResultDto> DETAILS = List.of(
             JudgeResultDto.builder().testCase("1").result(0).cpuTime(12).realTime(15).memory(3072L).build());
 
-    /** The row as the conditional write left it, read back by the consumer. */
+    /** The row as the conditional write left it, read back by the consumer: a contest submission. */
     private Submission written(UUID id, int status, int rejudgeCount) {
         Submission s = Submission.builder().problemId(UUID.randomUUID())
+                .userId(UUID.randomUUID())
+                .contestId(UUID.randomUUID())
                 .status(status)
                 .rejudgeCount(rejudgeCount)
                 .createdAt(LocalDateTime.now())
                 .build();
         s.setId(id);
         return s;
+    }
+
+    /** The event announcing the row's verdict: its submitter, its contest and when it was submitted. */
+    private static SubmissionVerdictRecorded recorded(Submission s, int verdict, boolean rejudge) {
+        return new SubmissionVerdictRecorded(s.getId(), s.getProblemId(), verdict, rejudge, s.getUserId(),
+                s.getContestId(), s.getCreatedAt().atZone(ZoneId.systemDefault()).toInstant());
     }
 
     private void oneRowUpdated(UUID id, Submission reread) {
@@ -82,7 +91,7 @@ class JudgeResultConsumerTest {
         // Announced to problem-service in the verdict's own transaction, keyed by problem: once, as a first verdict.
         verify(outboxWriter).append(eq("oj.submission.events"), eq(s.getProblemId().toString()),
                 argThat(envelope -> envelope instanceof EventEnvelope<?> sent
-                        && sent.payload().equals(new SubmissionVerdictRecorded(id, s.getProblemId(), 0, false))
+                        && sent.payload().equals(recorded(s, 0, false))
                         && sent.eventType().equals("SubmissionVerdictRecorded")));
         // Routed through the after-commit entry point; with no active transaction it degenerates to an immediate
         // publish (see VerdictPubSubTest).
@@ -146,7 +155,7 @@ class JudgeResultConsumerTest {
 
         verify(outboxWriter).append(eq("oj.submission.events"), eq(s.getProblemId().toString()),
                 argThat(envelope -> envelope instanceof EventEnvelope<?> sent
-                        && sent.payload().equals(new SubmissionVerdictRecorded(id, s.getProblemId(), -1, true))));
+                        && sent.payload().equals(recorded(s, -1, true))));
         verify(ojMetrics).recordVerdict(-1, s.getCreatedAt(), true);
     }
 

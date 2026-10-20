@@ -6,10 +6,10 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionOperations;
 import vn.thanhtuanle.common.enums.SubmissionResult;
+import vn.thanhtuanle.messaging.VerdictEvents;
 import vn.thanhtuanle.messaging.VerdictPubSub;
 import vn.thanhtuanle.messaging.outbox.OutboxWriter;
 import vn.thanhtuanle.oj.common.event.OjTopics;
-import vn.thanhtuanle.oj.common.event.SubmissionVerdictRecorded;
 import vn.thanhtuanle.submission.SubmissionTimeouts.TimedOut;
 
 import java.time.Duration;
@@ -71,8 +71,7 @@ public class SubmissionReconcileJob {
             for (TimedOut submission : failed) {
                 // Same transaction as the status change: announced if and only if it was recorded.
                 outboxWriter.append(OjTopics.SUBMISSION_EVENTS, submission.problemId().toString(),
-                        new SubmissionVerdictRecorded(submission.id(), submission.problemId(),
-                                SubmissionResult.SYSTEM_ERROR.getValue(), submission.rejudge()).toEnvelope());
+                        VerdictEvents.recorded(submission, SubmissionResult.SYSTEM_ERROR.getValue()).toEnvelope());
                 // Deferred until the commit: an earlier push could reach a subscriber that still reads the old row.
                 verdictPubSub.publishAfterCommit(submission.id().toString());
             }

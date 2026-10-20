@@ -11,7 +11,6 @@ import vn.thanhtuanle.entity.Submission;
 import vn.thanhtuanle.messaging.event.SubmissionJudgedEvent;
 import vn.thanhtuanle.messaging.outbox.OutboxWriter;
 import vn.thanhtuanle.oj.common.event.OjTopics;
-import vn.thanhtuanle.oj.common.event.SubmissionVerdictRecorded;
 import vn.thanhtuanle.metrics.OjMetrics;
 import vn.thanhtuanle.submission.SubmissionRepository;
 
@@ -78,7 +77,7 @@ public class JudgeResultConsumer {
             boolean rejudge = submission.getRejudgeCount() > 0;
             // Same transaction as the verdict: the fact is announced if and only if it was recorded.
             outboxWriter.append(OjTopics.SUBMISSION_EVENTS, submission.getProblemId().toString(),
-                    new SubmissionVerdictRecorded(id, submission.getProblemId(), status, rejudge).toEnvelope());
+                    VerdictEvents.recorded(submission, status, rejudge).toEnvelope());
             // Deferred until this @Transactional method commits (VerdictPubSub.publishAfterCommit):
             // publishing mid-transaction would let a subscriber's fresh re-read still see PENDING
             // while the live publish has already passed its emitter by — a lost verdict.

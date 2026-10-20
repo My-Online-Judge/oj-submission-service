@@ -66,7 +66,7 @@ class SubmitTransactionBoundaryTest extends PostgresTest {
     @Test
     void noTransactionIsOpenDuringTheGrpcAndRedisCalls() {
         List<Boolean> seen = new ArrayList<>();
-        when(problemCatalog.judgeSpec("a-plus-b", false)).thenAnswer(inv -> {
+        when(problemCatalog.judgeSpec("a-plus-b", false, null)).thenAnswer(inv -> {
             seen.add(TransactionSynchronizationManager.isActualTransactionActive());
             return new JudgeSpec(UUID.randomUUID(), "a-plus-b", 1000, 256L, "abc123def456");
         });
@@ -88,7 +88,7 @@ class SubmitTransactionBoundaryTest extends PostgresTest {
 
     @Test
     void theJudgeRequestOfASubmitIsGenerationZero() {
-        when(problemCatalog.judgeSpec("a-plus-b", false))
+        when(problemCatalog.judgeSpec("a-plus-b", false, null))
                 .thenReturn(new JudgeSpec(UUID.randomUUID(), "a-plus-b", 1000, 256L, "abc123def456"));
 
         var dto = submissionService.submit(SubmissionRequestDto.builder()

@@ -19,8 +19,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * submission-db is built by Flyway alone: V1 (the four live tables) + V2 (the languages) + V3 (what the sandbox can
- * judge of them) + V4 (the judging start, the rejudge count and the indexes the reconcile job and rejudge read). The context starting at all proves Hibernate's ddl-auto=validate accepts them for every entity; the
- * assertions pin what the monolith's migration tests used to guard (a required problem_slug, an error_message that
+ * judge of them) + V4 (the judging start, the rejudge count and the indexes the reconcile job and rejudge read) + V5
+ * (the contest a submission was made in). The context starting at all proves Hibernate's ddl-auto=validate accepts them
+ * for every entity; the assertions pin what the monolith's migration tests used to guard (a required problem_slug, an error_message that
  * holds a compiler's full output).
  *
  * <p>Its container stops with the class, so the context is not kept for later tests: a cached context would go on
@@ -61,7 +62,7 @@ class SubmissionSchemaTest {
     @Test
     void submissionDbHoldsTheFourSubmissionTablesAndTheLanguages() {
         assertThat(jdbc.queryForList("SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank",
-                String.class)).containsExactly("1", "2", "3", "4");
+                String.class)).containsExactly("1", "2", "3", "4", "5");
         assertThat(jdbc.queryForList("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' "
                 + "ORDER BY table_name", String.class))
                 .containsExactly("flyway_schema_history", "t_judge_servers", "t_languages", "t_outbox", "t_submissions");
@@ -105,5 +106,16 @@ class SubmissionSchemaTest {
         assertThat(jdbc.queryForObject("SELECT indexdef FROM pg_indexes WHERE indexname = 'ix_outbox_topic_key'",
                 String.class))
                 .endsWith("ON public.t_outbox USING btree (topic, message_key)");
+    }
+
+    @Test
+    void v5AddsTheContestOfASubmission() {
+        assertThat(jdbc.queryForMap("SELECT data_type, is_nullable FROM information_schema.columns "
+                + "WHERE table_name = 't_submissions' AND column_name = 'contest_id'"))
+                .containsEntry("data_type", "uuid").containsEntry("is_nullable", "YES");
+        assertThat(jdbc.queryForObject("SELECT indexdef FROM pg_indexes WHERE indexname = 'ix_submissions_contest_user'",
+                String.class))
+                .contains("ON public.t_submissions USING btree (contest_id, user_id)")
+                .contains("WHERE (contest_id IS NOT NULL)");
     }
 }

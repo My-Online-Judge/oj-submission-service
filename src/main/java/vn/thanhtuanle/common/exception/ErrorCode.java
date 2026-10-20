@@ -39,6 +39,7 @@ public enum ErrorCode implements ErrorCodeSpec {
     IDENTITY_UNAVAILABLE("Users are temporarily unavailable. Try again in a moment", HttpStatus.SERVICE_UNAVAILABLE),
     QUEUE_FULL("The judge is busy, try again in a moment", HttpStatus.SERVICE_UNAVAILABLE),
     SUBMISSION_NOT_FINISHED("This submission is still being judged", HttpStatus.CONFLICT),
+    CONTEST_NOT_RUNNING("Contest is not running", HttpStatus.BAD_REQUEST),
     UNCATEGORIZED_EXCEPTION("Uncategorized error", HttpStatus.INTERNAL_SERVER_ERROR);
 
     private final String message;

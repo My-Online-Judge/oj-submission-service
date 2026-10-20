@@ -60,12 +60,17 @@ class SubmissionTimeoutsTest extends PostgresTest {
     }
 
     private UUID submission(int status, LocalDateTime createdAt, LocalDateTime judgingStartedAt, int rejudgeCount) {
+        return submission(status, createdAt, judgingStartedAt, rejudgeCount, UUID.randomUUID(), null);
+    }
+
+    private UUID submission(int status, LocalDateTime createdAt, LocalDateTime judgingStartedAt, int rejudgeCount,
+                            UUID userId, UUID contestId) {
         UUID id = UUID.randomUUID();
         jdbc.update("INSERT INTO t_submissions (id, status, \"time\", created_at, updated_at, language_id, problem_id, "
-                        + "problem_slug, user_id, judging_started_at, rejudge_count) "
-                        + "VALUES (?, ?, 0, ?, ?, ?, ?, 'reconcile', ?, ?, ?)",
-                id, status, createdAt, createdAt, C_LANGUAGE_ID, UUID.randomUUID(), UUID.randomUUID(),
-                judgingStartedAt, rejudgeCount);
+                        + "problem_slug, user_id, judging_started_at, rejudge_count, contest_id) "
+                        + "VALUES (?, ?, 0, ?, ?, ?, ?, 'reconcile', ?, ?, ?, ?)",
+                id, status, createdAt, createdAt, C_LANGUAGE_ID, UUID.randomUUID(), userId,
+                judgingStartedAt, rejudgeCount, contestId);
         inserted.add(id);
         return id;
     }
@@ -89,6 +94,14 @@ class SubmissionTimeoutsTest extends PostgresTest {
         return jdbc.queryForMap("SELECT status, error_message, updated_at FROM t_submissions WHERE id = ?", id);
     }
 
+    /** What a rule returns for the row, read back from the table. */
+    private TimedOut timedOut(UUID id, boolean rejudge) {
+        return jdbc.queryForObject("SELECT problem_id, user_id, contest_id, created_at FROM t_submissions WHERE id = ?",
+                (rs, rowNum) -> new TimedOut(id, rs.getObject("problem_id", UUID.class), rejudge,
+                        rs.getObject("user_id", UUID.class), rs.getObject("contest_id", UUID.class),
+                        rs.getObject("created_at", LocalDateTime.class)), id);
+    }
+
     private UUID problemId(UUID id) {
         return jdbc.queryForObject("SELECT problem_id FROM t_submissions WHERE id = ?", UUID.class, id);
     }
@@ -103,7 +116,7 @@ class SubmissionTimeoutsTest extends PostgresTest {
 
         List<TimedOut> timedOut = timeouts.failJudgingStartedBefore(JUDGING_THRESHOLD, NOW);
 
-        assertThat(timedOut).containsExactly(new TimedOut(id, problemId(id), false));
+        assertThat(timedOut).containsExactly(timedOut(id, false));
         Map<String, Object> row = row(id);
         assertThat(row.get("status")).isEqualTo(SubmissionResult.SYSTEM_ERROR.getValue());
         assertThat(row.get("error_message")).isEqualTo("Judging timed out");
@@ -160,7 +173,7 @@ class SubmissionTimeoutsTest extends PostgresTest {
 
         List<TimedOut> timedOut = timeouts.failPendingCreatedBefore(PENDING_THRESHOLD, NOW);
 
-        assertThat(timedOut).containsExactly(new TimedOut(id, problemId(id), false));
+        assertThat(timedOut).containsExactly(timedOut(id, false));
         Map<String, Object> row = row(id);
         assertThat(row.get("status")).isEqualTo(SubmissionResult.SYSTEM_ERROR.getValue());
         assertThat(row.get("error_message")).isEqualTo("Judging request lost");
@@ -209,9 +222,22 @@ class SubmissionTimeoutsTest extends PostgresTest {
         request(pending, NOW.minusMinutes(31));
 
         assertThat(timeouts.failJudgingStartedBefore(JUDGING_THRESHOLD, NOW))
-                .containsExactly(new TimedOut(judging, problemId(judging), true));
+                .containsExactly(timedOut(judging, true));
         assertThat(timeouts.failPendingCreatedBefore(PENDING_THRESHOLD, NOW))
-                .containsExactly(new TimedOut(pending, problemId(pending), true));
+                .containsExactly(timedOut(pending, true));
+    }
+
+    @Test
+    void bothRulesReturnTheSubmitterTheContestAndTheSubmitTime() {
+        UUID userId = UUID.randomUUID();
+        UUID contestId = UUID.randomUUID();
+        UUID judging = submission(JUDGING, NOW.minusMinutes(10), NOW.minusMinutes(4), 0, userId, contestId);
+        UUID pending = submission(PENDING, NOW.minusMinutes(40), null, 0, userId, contestId);
+
+        assertThat(timeouts.failJudgingStartedBefore(JUDGING_THRESHOLD, NOW)).containsExactly(
+                new TimedOut(judging, problemId(judging), false, userId, contestId, NOW.minusMinutes(10)));
+        assertThat(timeouts.failPendingCreatedBefore(PENDING_THRESHOLD, NOW)).containsExactly(
+                new TimedOut(pending, problemId(pending), false, userId, contestId, NOW.minusMinutes(40)));
     }
 
     @Test

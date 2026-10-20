@@ -5,10 +5,13 @@ import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.retry.Retry;
 import io.grpc.StatusRuntimeException;
 import lombok.extern.slf4j.Slf4j;
+import vn.thanhtuanle.common.exception.ErrorCode;
+import vn.thanhtuanle.oj.common.grpc.ProblemRpcReasons;
 import vn.thanhtuanle.oj.common.grpc.problem.v1.GetJudgeSpecRequest;
 import vn.thanhtuanle.oj.common.grpc.problem.v1.GetSampleTestCasesRequest;
 import vn.thanhtuanle.oj.common.grpc.problem.v1.ListVisibleSlugsRequest;
 import vn.thanhtuanle.oj.common.grpc.problem.v1.ProblemInternalGrpc;
+import vn.thanhtuanle.oj.common.web.error.AppException;
 
 import java.time.Duration;
 import java.util.Collection;
@@ -43,17 +46,28 @@ public class GrpcProblemCatalog implements ProblemCatalog {
     }
 
     @Override
-    public JudgeSpec judgeSpec(String slug, boolean allowInactive) {
-        GetJudgeSpecRequest request = GetJudgeSpecRequest.newBuilder().setProblemSlug(slug)
-                .setAllowInactive(allowInactive).build();
+    public JudgeSpec judgeSpec(String slug, boolean allowInactive, String contestSlug) {
+        GetJudgeSpecRequest.Builder builder = GetJudgeSpecRequest.newBuilder().setProblemSlug(slug)
+                .setAllowInactive(allowInactive);
+        if (contestSlug != null) {
+            builder.setContestSlug(contestSlug);
+        }
+        GetJudgeSpecRequest request = builder.build();
         try {
             var spec = call(() -> withDeadline().getJudgeSpec(request));
+            // An empty contest_id means none: practice, or a problem-service that predates contests.
+            UUID contestId = spec.getContestId().isEmpty() ? null : UUID.fromString(spec.getContestId());
             return new JudgeSpec(UUID.fromString(spec.getProblemId()), spec.getProblemSlug(), spec.getTimeLimitMs(),
-                    spec.getMemoryLimitMb(), spec.getTestCaseVersion());
+                    spec.getMemoryLimitMb(), spec.getTestCaseVersion(), contestId);
         } catch (StatusRuntimeException e) {
             switch (e.getStatus().getCode()) {
                 case NOT_FOUND -> throw new ProblemNotFoundException();
-                case FAILED_PRECONDITION -> throw new ProblemNotJudgeableException(slug);
+                case FAILED_PRECONDITION -> {
+                    if (ProblemRpcReasons.isContestNotRunning(e)) {
+                        throw new AppException(ErrorCode.CONTEST_NOT_RUNNING);
+                    }
+                    throw new ProblemNotJudgeableException(slug);
+                }
                 default -> {
                     log.warn("problem-service could not give the judge spec of {}: {}", slug, e.getStatus());
                     throw new ProblemCatalogUnavailableException();

@@ -75,4 +75,8 @@ public class Submission extends BaseEntity {
 
     @Column(name = "rejudge_count", nullable = false)
     private int rejudgeCount;
+
+    // The contest this was submitted in (problem-service's id), null for practice. Kept through rejudges.
+    @Column(name = "contest_id")
+    private UUID contestId;
 }

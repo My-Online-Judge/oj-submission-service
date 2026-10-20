@@ -15,4 +15,5 @@ public final class Permissions {
     public static final String PROBLEM_DELETE = "problem:delete";
     public static final String JUDGESERVER_READ = "judgeserver:read";
     public static final String SUBMISSION_READ_ANY = "submission:read_any";
+    public static final String SUBMISSION_REJUDGE = "submission:rejudge";
 }

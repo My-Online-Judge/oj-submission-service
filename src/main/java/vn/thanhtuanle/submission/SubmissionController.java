@@ -1,12 +1,14 @@
 package vn.thanhtuanle.submission;
 
 import java.util.List;
+import java.util.UUID;
 
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -22,6 +24,7 @@ import vn.thanhtuanle.submission.dto.SubmissionResponseDto;
 public class SubmissionController {
 
     private final SubmissionService submissionService;
+    private final RejudgeService rejudgeService;
 
     @PostMapping
     @Operation(summary = "Submit a solution for a problem")
@@ -73,5 +76,13 @@ public class SubmissionController {
     public SseEmitter stream(@PathVariable String id) {
         log.info("SSE subscribe for submission {}", id);
         return submissionService.streamVerdict(id);
+    }
+
+    @PostMapping("/{id}/rejudge")
+    @PreAuthorize("hasAuthority('submission:rejudge')")
+    @Operation(summary = "Judge a finished submission again against the problem's current test data (admin only)")
+    public ApiResponse<SubmissionResponseDto> rejudge(@PathVariable String id) {
+        log.info("Rejudge requested for submission {}", id);
+        return ApiResponse.success(rejudgeService.rejudge(UUID.fromString(id)));
     }
 }

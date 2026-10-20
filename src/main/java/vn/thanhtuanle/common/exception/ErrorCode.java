@@ -37,6 +37,7 @@ public enum ErrorCode implements ErrorCodeSpec {
     SUBMISSION_RATE_LIMITED("You are submitting too fast. Try again in a moment", HttpStatus.TOO_MANY_REQUESTS),
     PROBLEMS_UNAVAILABLE("Problems are temporarily unavailable. Try again in a moment", HttpStatus.SERVICE_UNAVAILABLE),
     QUEUE_FULL("The judge is busy, try again in a moment", HttpStatus.SERVICE_UNAVAILABLE),
+    SUBMISSION_NOT_FINISHED("This submission is still being judged", HttpStatus.CONFLICT),
     UNCATEGORIZED_EXCEPTION("Uncategorized error", HttpStatus.INTERNAL_SERVER_ERROR);
 
     private final String message;

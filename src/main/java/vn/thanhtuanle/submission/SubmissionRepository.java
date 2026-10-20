@@ -90,6 +90,20 @@ public interface SubmissionRepository extends JpaRepository<Submission, UUID> {
                      @Param("errorMessage") String errorMessage, @Param("details") List<JudgeResultDto> details,
                      @Param("now") LocalDateTime now);
 
+    /**
+     * Puts a finished submission back to PENDING for a rejudge: the previous verdict, its times and its start are
+     * cleared and the rejudge is counted. A PENDING or JUDGING submission (one already queued or rejudged meanwhile)
+     * and an unknown id are left alone: 0 rows. Flushed before and cleared after, so a following read sees the row.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            UPDATE Submission s
+            SET s.status = 6, s.result = null, s.cpuTime = null, s.time = 0, s.memory = 0L, s.errorMessage = null,
+                s.details = null, s.judgingStartedAt = null, s.rejudgeCount = s.rejudgeCount + 1, s.updatedAt = :now
+            WHERE s.id = :id AND s.status NOT IN (6, 7)
+            """)
+    int resetForRejudge(@Param("id") UUID id, @Param("now") LocalDateTime now);
+
     /** The submission with its language loaded, for mapping outside a transaction (VerdictPush). */
     @EntityGraph(attributePaths = "language")
     Optional<Submission> findWithLanguageById(UUID id);

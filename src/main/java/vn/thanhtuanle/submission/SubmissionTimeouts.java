@@ -35,11 +35,14 @@ public class SubmissionTimeouts {
 
     private final NamedParameterJdbcTemplate jdbc;
 
-    /** Fails each JUDGING submission whose worker started before {@code threshold}. */
+    /**
+     * Fails each JUDGING submission whose worker started before {@code threshold}. A JUDGING row without a start
+     * time (none is written today) counts from its last update, so it cannot hang forever.
+     */
     public List<TimedOut> failJudgingStartedBefore(LocalDateTime threshold, LocalDateTime now) {
         return jdbc.query("""
                 UPDATE t_submissions SET status = 5, error_message = :message, updated_at = :now
-                WHERE status = 7 AND judging_started_at < :threshold
+                WHERE status = 7 AND COALESCE(judging_started_at, updated_at) < :threshold
                 RETURNING id, problem_id, rejudge_count > 0 AS rejudge
                 """, params(JUDGING_TIMED_OUT, threshold, now), TIMED_OUT);
     }

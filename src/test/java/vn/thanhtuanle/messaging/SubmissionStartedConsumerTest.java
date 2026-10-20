@@ -80,6 +80,19 @@ class SubmissionStartedConsumerTest extends PostgresTest {
     }
 
     @Test
+    void anOlderStartDoesNotMoveTheStartBack() {
+        Instant later = Instant.parse("2026-10-19T05:02:30.456Z");
+        Instant older = Instant.parse("2026-10-19T05:00:00.123Z");
+        UUID id = insertSubmission(7, local(later));
+
+        consumer.onStarted(started(id, older));
+
+        assertThat(row(id).get("status")).isEqualTo(7);
+        assertThat(jdbc.queryForObject("SELECT judging_started_at FROM t_submissions WHERE id = ?",
+                LocalDateTime.class, id)).isEqualTo(local(later));
+    }
+
+    @Test
     void aStartForAFinishedSubmissionChangesNothing() {
         UUID id = insertSubmission(0, null);
 

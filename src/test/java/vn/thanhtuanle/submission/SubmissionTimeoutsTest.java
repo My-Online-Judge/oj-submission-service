@@ -112,6 +112,16 @@ class SubmissionTimeoutsTest extends PostgresTest {
     }
 
     @Test
+    void aJudgingRowWithoutAStartTimesOutFromItsLastUpdate() {
+        UUID stale = submission(JUDGING, NOW.minusMinutes(4), null, 0);
+        UUID recent = submission(JUDGING, NOW.minusMinutes(1), null, 0);
+
+        assertThat(ids(timeouts.failJudgingStartedBefore(JUDGING_THRESHOLD, NOW))).containsExactly(stale);
+        assertThat(row(stale).get("status")).isEqualTo(SubmissionResult.SYSTEM_ERROR.getValue());
+        assertThat(row(recent).get("status")).isEqualTo(JUDGING);
+    }
+
+    @Test
     void judgingStartedOneMinuteAgoIsKept() {
         // Created long ago: only the start time counts for a JUDGING row.
         UUID id = submission(JUDGING, NOW.minusHours(1), NOW.minusMinutes(1), 0);

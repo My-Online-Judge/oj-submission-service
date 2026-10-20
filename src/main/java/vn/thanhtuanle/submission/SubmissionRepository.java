@@ -62,12 +62,14 @@ public interface SubmissionRepository extends JpaRepository<Submission, UUID> {
     );
 
     /**
-     * A worker began judging: a PENDING or JUDGING submission becomes JUDGING with that start time (a second start, a
-     * worker's retry or a redelivery, replaces it). A finished or unknown submission is left alone: 0 rows.
+     * A worker began judging: a PENDING or JUDGING submission becomes JUDGING with that start time (a later start, a
+     * worker's retry, replaces it). A finished or unknown submission is left alone, and so is one that already holds
+     * a later start (a redelivered older event must not pull the start back and time the row out early): 0 rows.
      */
     @Modifying(clearAutomatically = true)
     @Query("UPDATE Submission s SET s.status = 7, s.judgingStartedAt = :startedAt, s.updatedAt = :now "
-            + "WHERE s.id = :id AND s.status IN (6, 7)")
+            + "WHERE s.id = :id AND s.status IN (6, 7) "
+            + "AND (s.judgingStartedAt IS NULL OR s.judgingStartedAt < :startedAt)")
     int applyStarted(@Param("id") UUID id, @Param("startedAt") LocalDateTime startedAt,
                      @Param("now") LocalDateTime now);
 

@@ -49,7 +49,9 @@ class GrpcProblemCatalogContestTest {
         channel = InProcessChannelBuilder.forName(name).build();
         catalog = new GrpcProblemCatalog(ProblemInternalGrpc.newBlockingStub(channel),
                 CircuitBreaker.of("problem-service", ProblemServiceResilience.circuitBreakerConfig()),
-                Retry.of("problem-service", ProblemServiceResilience.retryConfig()), Duration.ofSeconds(2),
+                Retry.of("problem-service", ProblemServiceResilience.retryConfig()),
+                CircuitBreaker.of("problem-service-visibility", ProblemServiceResilience.circuitBreakerConfig()),
+                Retry.of("problem-service-visibility", ProblemServiceResilience.retryConfig()), Duration.ofSeconds(2),
                 new ChannelRecovery(channel));
     }
 

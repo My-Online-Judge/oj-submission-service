@@ -25,7 +25,9 @@ import java.util.function.Supplier;
 /**
  * {@link ProblemCatalog} over problem-service's internal gRPC API. Each attempt has its own deadline; the
  * retry wraps the circuit breaker, so every attempt counts and an open breaker is not retried. An attempt is refused at
- * once while the channel recovers from a failure ({@link ChannelRecovery}).
+ * once while the channel recovers from a failure ({@link ChannelRecovery}). The judge spec and the sample test cases
+ * share one breaker and retry; {@link #visibleSlugs}, which anonymous profile views call, has its own, so its failures
+ * and its traffic never open (or take the probes of) the breaker that gates every submit.
  */
 @Slf4j
 public class GrpcProblemCatalog implements ProblemCatalog {
@@ -33,14 +35,23 @@ public class GrpcProblemCatalog implements ProblemCatalog {
     private final ProblemInternalGrpc.ProblemInternalBlockingStub stub;
     private final CircuitBreaker circuitBreaker;
     private final Retry retry;
+    private final CircuitBreaker visibilityBreaker;
+    private final Retry visibilityRetry;
     private final Duration deadline;
     private final ChannelRecovery recovery;
 
+    /**
+     * @param circuitBreaker    and {@code retry}: the judge spec and the sample test cases
+     * @param visibilityBreaker and {@code visibilityRetry}: {@link #visibleSlugs} only
+     */
     public GrpcProblemCatalog(ProblemInternalGrpc.ProblemInternalBlockingStub stub, CircuitBreaker circuitBreaker,
-            Retry retry, Duration deadline, ChannelRecovery recovery) {
+            Retry retry, CircuitBreaker visibilityBreaker, Retry visibilityRetry, Duration deadline,
+            ChannelRecovery recovery) {
         this.stub = stub;
         this.circuitBreaker = circuitBreaker;
         this.retry = retry;
+        this.visibilityBreaker = visibilityBreaker;
+        this.visibilityRetry = visibilityRetry;
         this.deadline = deadline;
         this.recovery = recovery;
     }
@@ -54,7 +65,7 @@ public class GrpcProblemCatalog implements ProblemCatalog {
         }
         GetJudgeSpecRequest request = builder.build();
         try {
-            var spec = call(() -> withDeadline().getJudgeSpec(request));
+            var spec = call(circuitBreaker, retry, () -> withDeadline().getJudgeSpec(request));
             // An empty contest_id means none: practice, or a problem-service that predates contests.
             UUID contestId = spec.getContestId().isEmpty() ? null : UUID.fromString(spec.getContestId());
             return new JudgeSpec(UUID.fromString(spec.getProblemId()), spec.getProblemSlug(), spec.getTimeLimitMs(),
@@ -84,8 +95,9 @@ public class GrpcProblemCatalog implements ProblemCatalog {
                 .setProblemId(problemId.toString()).build();
         try {
             Map<String, SampleTestCase> samples = new HashMap<>();
-            call(() -> withDeadline().getSampleTestCases(request)).getCasesList().forEach(c -> samples.put(c.getName(),
-                    new SampleTestCase(c.getName(), c.getInput(), c.getExpectedOutput())));
+            call(circuitBreaker, retry, () -> withDeadline().getSampleTestCases(request)).getCasesList()
+                    .forEach(c -> samples.put(c.getName(),
+                            new SampleTestCase(c.getName(), c.getInput(), c.getExpectedOutput())));
             return samples;
         } catch (RuntimeException e) {
             log.warn("Sample test cases of problem {} unavailable, every row shows as hidden: {}", problemId, e.toString());
@@ -97,7 +109,8 @@ public class GrpcProblemCatalog implements ProblemCatalog {
     public Set<String> visibleSlugs(Collection<String> slugs) {
         ListVisibleSlugsRequest request = ListVisibleSlugsRequest.newBuilder().addAllSlugs(slugs).build();
         try {
-            return Set.copyOf(call(() -> withDeadline().listVisibleSlugs(request)).getSlugsList());
+            return Set.copyOf(call(visibilityBreaker, visibilityRetry, () -> withDeadline().listVisibleSlugs(request))
+                    .getSlugsList());
         } catch (StatusRuntimeException e) {
             log.warn("problem-service could not list the visible slugs: {}", e.getStatus());
             throw new ProblemCatalogUnavailableException();
@@ -110,12 +123,12 @@ public class GrpcProblemCatalog implements ProblemCatalog {
         return stub.withDeadlineAfter(deadline.toMillis(), TimeUnit.MILLISECONDS);
     }
 
-    private <T> T call(Supplier<T> rpc) {
+    private <T> T call(CircuitBreaker breaker, Retry retry, Supplier<T> rpc) {
         // The recovery check runs inside the breaker, so a refusal counts as a failure (sub-project 8 G2).
         Supplier<T> attempt = () -> {
             recovery.admit();
             return rpc.get();
         };
-        return Retry.decorateSupplier(retry, CircuitBreaker.decorateSupplier(circuitBreaker, attempt)).get();
+        return Retry.decorateSupplier(retry, CircuitBreaker.decorateSupplier(breaker, attempt)).get();
     }
 }

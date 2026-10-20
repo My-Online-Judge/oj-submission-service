@@ -21,8 +21,8 @@ import java.time.Duration;
 /**
  * Wires {@link ProblemCatalog} to problem-service: the channel {@code problem-service}
  * ({@code spring.grpc.client.channels.problem-service.*}; mutual TLS under the tls profile), the service token when
- * one is set, the deadline per attempt and the shared retry and circuit breaker, whose state is exported as
- * {@code resilience4j_circuitbreaker_state}.
+ * one is set, the deadline per attempt, and the retries and circuit breakers ({@link ProblemServiceResilience}), whose
+ * states are exported as {@code resilience4j_circuitbreaker_state}.
  */
 @Configuration
 public class ProblemServiceClientConfig {
@@ -66,8 +66,12 @@ public class ProblemServiceClientConfig {
         if (StringUtils.hasText(token)) {
             stub = stub.withInterceptors(new ServiceTokenClientInterceptor(token));
         }
-        return new GrpcProblemCatalog(stub, circuitBreakers.circuitBreaker(ProblemServiceResilience.NAME),
-                RetryRegistry.of(ProblemServiceResilience.retryConfig()).retry(ProblemServiceResilience.NAME), deadline,
-                problemServiceRecovery);
+        RetryRegistry retries = RetryRegistry.of(ProblemServiceResilience.retryConfig());
+        return new GrpcProblemCatalog(stub,
+                circuitBreakers.circuitBreaker(ProblemServiceResilience.NAME),
+                retries.retry(ProblemServiceResilience.NAME),
+                circuitBreakers.circuitBreaker(ProblemServiceResilience.VISIBILITY_NAME),
+                retries.retry(ProblemServiceResilience.VISIBILITY_NAME),
+                deadline, problemServiceRecovery);
     }
 }

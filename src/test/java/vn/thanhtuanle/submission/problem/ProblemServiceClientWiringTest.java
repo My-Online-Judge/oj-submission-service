@@ -37,4 +37,13 @@ class ProblemServiceClientWiringTest {
                 .isNotNull()
                 .satisfies(g -> assertThat(g.value()).isZero());
     }
+
+    @Test
+    void profileVisibilityHasABreakerOfItsOwn() {
+        // ListVisibleSlugs serves anonymous profile views: its failures never open the breaker that gates submits.
+        assertThat(meters.find("resilience4j.circuitbreaker.state")
+                .tag("name", ProblemServiceResilience.VISIBILITY_NAME).tag("state", "closed").gauge())
+                .isNotNull()
+                .satisfies(g -> assertThat(g.value()).isEqualTo(1.0));
+    }
 }

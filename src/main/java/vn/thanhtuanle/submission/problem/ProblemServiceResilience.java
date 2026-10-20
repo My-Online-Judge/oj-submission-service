@@ -9,7 +9,9 @@ import java.time.Duration;
 import java.util.Set;
 
 /**
- * The policy around every call to problem-service (both RPCs share it). A breaker counts each attempt:
+ * The policy around every call to problem-service. The judge spec and the sample test cases share the breaker and retry
+ * {@value #NAME}; the profile's visible slugs have their own, {@value #VISIBILITY_NAME}, with the same settings, so
+ * anonymous profile traffic never opens the breaker that gates submits. A breaker counts each attempt:
  * 20-call window, judged from 10 calls, open at 50 % failures for 10 s, then three probe calls decide
  * (the default ten kept a quiet site HALF_OPEN, and its alert firing, long after a recovery). Only
  * UNAVAILABLE is retried, twice, 50 ms apart (sub-project 7 F3: a failed call costs ~0.1 s, not ~0.4 s); a deadline
@@ -18,6 +20,7 @@ import java.util.Set;
 public final class ProblemServiceResilience {
 
     public static final String NAME = "problem-service";
+    public static final String VISIBILITY_NAME = "problem-service-visibility";
 
     /** Answers about the request, not failures of the service: they never open the breaker. */
     private static final Set<Status.Code> ANSWERS =

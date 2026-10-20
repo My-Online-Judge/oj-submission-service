@@ -10,6 +10,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.time.LocalDateTime;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Moves committed outbox rows to Kafka.
@@ -18,6 +19,9 @@ import java.util.concurrent.Executors;
  * own thread so the caller never waits for Kafka. The OpenTelemetry agent carries the caller's trace
  * context onto that thread, so the record continues the request's trace. Rows a dispatch could not send
  * — Kafka down, or a crash between the commit and the send — are picked up by {@link #poll}.
+ *
+ * <p>At most one dispatched pass waits at a time: a problem rejudge calls {@link #relaySoon} once per queued
+ * submission, and one pass sends them all.
  */
 @Component
 @Slf4j
@@ -33,6 +37,8 @@ public class OutboxRelay {
         t.setDaemon(true);
         return t;
     });
+    /** A dispatched pass is waiting on the relay thread and has not started yet. */
+    private final AtomicBoolean queued = new AtomicBoolean();
 
     public OutboxRelay(OutboxRepository repository, OutboxSender sender,
             PlatformTransactionManager transactionManager, OutboxProperties props) {
@@ -42,11 +48,20 @@ public class OutboxRelay {
         this.props = props;
     }
 
-    /** Called after a transaction that appended rows has committed. Returns at once. */
+    /**
+     * Called after a transaction that appended rows has committed. Returns at once. Queues a pass unless one is
+     * already waiting: that pass has not started, so it will see these rows too.
+     */
     public void relaySoon() {
-        if (props.isRelayEnabled()) {
-            executor.execute(this::relayPending);
+        if (props.isRelayEnabled() && queued.compareAndSet(false, true)) {
+            executor.execute(this::dispatchedPass);
         }
+    }
+
+    private void dispatchedPass() {
+        // Cleared before the pass reads anything: rows committed while it runs get one more pass.
+        queued.set(false);
+        relayPending();
     }
 
     /** Safety net for rows the after-commit dispatch could not send. */

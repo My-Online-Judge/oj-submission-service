@@ -9,6 +9,12 @@ spring:
   # and unaffected by this — those are pinned via TimeZone.setDefault in SubmissionServiceApplication.main.
   jackson:
     time-zone: Asia/Ho_Chi_Minh
+  task:
+    scheduling:
+      # The outbox relay poll can block 5-15 s while Kafka is down; the queue-depth refresh and the reconcile job
+      # must not serialize behind it on the default single thread.
+      pool:
+        size: 3
   profiles:
     active: @spring.profiles.active@
   kafka:

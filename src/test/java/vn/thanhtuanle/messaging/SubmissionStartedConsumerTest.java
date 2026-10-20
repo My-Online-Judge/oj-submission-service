@@ -142,4 +142,17 @@ class SubmissionStartedConsumerTest extends PostgresTest {
             TimeZone.setDefault(before);
         }
     }
+
+    @Test
+    void aStartInTheFutureIsClampedToNow() {
+        UUID id = insertSubmission(6, null);
+        LocalDateTime before = LocalDateTime.now();
+
+        // A worker clock running ahead must not postpone the timeout.
+        consumer.onStarted(started(id, Instant.now().plusSeconds(600)));
+
+        LocalDateTime stored = jdbc.queryForObject("SELECT judging_started_at FROM t_submissions WHERE id = ?",
+                LocalDateTime.class, id);
+        assertThat(stored).isBetween(before.minusSeconds(1), LocalDateTime.now().plusSeconds(1));
+    }
 }

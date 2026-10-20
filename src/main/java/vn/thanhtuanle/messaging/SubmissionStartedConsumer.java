@@ -46,8 +46,13 @@ public class SubmissionStartedConsumer {
         try {
             // The worker's instant is UTC; created_at, judging_started_at and LocalDateTime.now() are naive times in
             // the JVM's zone (Asia/Ho_Chi_Minh, pinned in SubmissionServiceApplication.main).
-            LocalDateTime startedAt = LocalDateTime.ofInstant(event.startedAt(), ZoneId.systemDefault());
-            int updated = submissionRepository.applyStarted(id, startedAt, LocalDateTime.now());
+            // The worker's clock is not the timeout clock: a start in this service's future (worker clock ahead) is
+            // clamped to now, or it would postpone the timeout. A worker clock BEHIND by minutes still shortens the
+            // window; not clamped, as the compose host shares one kernel clock.
+            LocalDateTime now = LocalDateTime.now();
+            LocalDateTime reported = LocalDateTime.ofInstant(event.startedAt(), ZoneId.systemDefault());
+            LocalDateTime startedAt = reported.isAfter(now) ? now : reported;
+            int updated = submissionRepository.applyStarted(id, startedAt, now);
             if (updated == 0) {
                 log.debug("Ignoring the start of a finished or unknown submission {}", id);
             }

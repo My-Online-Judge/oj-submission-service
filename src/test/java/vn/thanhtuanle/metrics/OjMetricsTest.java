@@ -1,11 +1,16 @@
 package vn.thanhtuanle.metrics;
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import io.micrometer.prometheusmetrics.PrometheusConfig;
+import io.micrometer.prometheusmetrics.PrometheusMeterRegistry;
 import org.junit.jupiter.api.Test;
 import vn.thanhtuanle.common.enums.SubmissionResult;
 import vn.thanhtuanle.submission.SubmissionRepository;
 
 import java.time.LocalDateTime;
+import java.util.Arrays;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -44,5 +49,24 @@ class OjMetricsTest {
     void recordVerdict_neverThrowsOnNullCreatedAt() {
         assertThatCode(() -> metrics.recordVerdict(SubmissionResult.ACCEPTED.getValue(), null, false))
                 .doesNotThrowAnyException();
+    }
+
+    @Test
+    void theLatencyHistogramReachesTenMinutesWithTheSloBuckets() {
+        // On the registry production scrapes: SimpleMeterRegistry leaves the percentile-histogram buckets out, so it
+        // could not tell a range that stops at the 30 s default from one that reaches 10 minutes.
+        PrometheusMeterRegistry prometheus = new PrometheusMeterRegistry(PrometheusConfig.DEFAULT);
+        new OjMetrics(prometheus, mock(SubmissionRepository.class));
+
+        List<Double> boundaries = Arrays.stream(
+                        prometheus.get("oj.judge.latency").timer().takeSnapshot().histogramCounts())
+                .map(bucket -> bucket.bucket(TimeUnit.SECONDS))
+                .toList();
+
+        assertThat(boundaries).contains(1.0, 5.0, 15.0, 30.0, 60.0, 120.0, 300.0);
+        assertThat(boundaries.stream().mapToDouble(Double::doubleValue).max().orElseThrow())
+                .as("past the largest SLO boundary, up to the 10-minute maximum")
+                .isGreaterThan(300.0)
+                .isLessThanOrEqualTo(600.0);
     }
 }

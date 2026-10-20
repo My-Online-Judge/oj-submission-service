@@ -90,6 +90,8 @@ judge:
   # ...and a PENDING one whose judge request left the outbox longer ago than this ("Judging request lost").
   pending-timeout: ${JUDGE_PENDING_TIMEOUT:30m}
   reconcile-interval-ms: ${JUDGE_RECONCILE_INTERVAL_MS:60000}
+  # OjMetrics recounts PENDING + JUDGING this often (the oj.queue.depth gauge); a scrape never queries the database.
+  queue-depth-refresh-ms: 5000
 
 oj:
   security:

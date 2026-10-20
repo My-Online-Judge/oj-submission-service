@@ -4,6 +4,7 @@ import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import vn.thanhtuanle.common.enums.SubmissionResult;
 import vn.thanhtuanle.submission.SubmissionRepository;
@@ -11,21 +12,38 @@ import vn.thanhtuanle.submission.SubmissionRepository;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 
 @Component
 @Slf4j
 public class OjMetrics {
 
+    private static final List<Integer> QUEUED_STATUSES =
+            List.of(SubmissionResult.PENDING.getValue(), SubmissionResult.JUDGING.getValue());
+
     private final MeterRegistry registry;
+    private final SubmissionRepository submissionRepository;
     private final Timer latencyTimer;
+    /**
+     * Submissions pending or in judging, as of the last refresh, plus the slots reserved since. Admission reads it on
+     * every submit and the gauge on every scrape; only {@link #refreshQueueDepth()} queries the database.
+     */
+    private final AtomicLong queueDepth = new AtomicLong();
 
     public OjMetrics(MeterRegistry registry, SubmissionRepository submissionRepository) {
         this.registry = registry;
+        this.submissionRepository = submissionRepository;
+        // The default range stops at 30 s, so a backlog of a few minutes all fell into +Inf and the bench's quantiles
+        // read 30 s. The buckets now reach 10 minutes, with exact boundaries at round latencies from 1 s to 5 min.
         this.latencyTimer = Timer.builder("oj.judge.latency")
                 .description("Submit-to-verdict latency")
                 .publishPercentileHistogram()
+                .maximumExpectedValue(Duration.ofMinutes(10))
+                .serviceLevelObjectives(Duration.ofSeconds(1), Duration.ofSeconds(5), Duration.ofSeconds(15),
+                        Duration.ofSeconds(30), Duration.ofSeconds(60), Duration.ofSeconds(120),
+                        Duration.ofSeconds(300))
                 .register(registry);
-        Gauge.builder("oj.queue.depth", submissionRepository, r -> queueDepth(r))
+        Gauge.builder("oj.queue.depth", queueDepth, AtomicLong::get)
                 .description("Submissions pending or in judging")
                 .register(registry);
         // oj.verdict{status=...} counters are created lazily by recordVerdict on the first verdict of
@@ -50,12 +68,33 @@ public class OjMetrics {
         }
     }
 
-    private static double queueDepth(SubmissionRepository repo) {
+    /** Recounts the queue; this drops the reservations made since the last refresh. A failure keeps the last value. */
+    @Scheduled(fixedDelayString = "${judge.queue-depth-refresh-ms:5000}")
+    public void refreshQueueDepth() {
         try {
-            return repo.countByStatusIn(List.of(
-                    SubmissionResult.PENDING.getValue(), SubmissionResult.JUDGING.getValue()));
+            queueDepth.set(submissionRepository.countByStatusIn(QUEUED_STATUSES));
         } catch (Exception e) {
-            return Double.NaN;  // gauge tolerates a transient query failure
+            log.warn("Queue depth refresh failed, keeping {}: {}", queueDepth.get(), e.getMessage());
+        }
+    }
+
+    public long queueDepth() {
+        return queueDepth.get();
+    }
+
+    /**
+     * Takes {@code count} slots if the queue stays within {@code max}; otherwise takes none and returns false. One
+     * compare-and-set, so submits that arrive between two refreshes cannot all pass on the same stale depth.
+     */
+    public boolean tryReserveQueueSlots(int count, long max) {
+        while (true) {
+            long depth = queueDepth.get();
+            if (depth + count > max) {
+                return false;
+            }
+            if (queueDepth.compareAndSet(depth, depth + count)) {
+                return true;
+            }
         }
     }
 

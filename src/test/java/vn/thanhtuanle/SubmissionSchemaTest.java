@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -21,10 +22,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * judge of them) + V4 (the judging start, the rejudge count and the indexes the reconcile job and rejudge read). The context starting at all proves Hibernate's ddl-auto=validate accepts them for every entity; the
  * assertions pin what the monolith's migration tests used to guard (a required problem_slug, an error_message that
  * holds a compiler's full output).
+ *
+ * <p>Its container stops with the class, so the context is not kept for later tests: a cached context would go on
+ * running OjMetrics' scheduled queue-depth refresh against the stopped database.
  */
 @SpringBootTest
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
+@DirtiesContext
 class SubmissionSchemaTest {
 
     @Container

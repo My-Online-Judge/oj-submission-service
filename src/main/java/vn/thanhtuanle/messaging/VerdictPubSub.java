@@ -1,5 +1,6 @@
 package vn.thanhtuanle.messaging;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -99,5 +100,6 @@ public class VerdictPubSub implements MessageListener {
     }
 
     /** What travels on {@link #CHANNEL}: the id of a submission whose verdict was just committed. */
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public record VerdictMessage(String submissionId) {}
 }

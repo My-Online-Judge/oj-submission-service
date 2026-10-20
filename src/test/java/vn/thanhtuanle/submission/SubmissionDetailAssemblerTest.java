@@ -97,4 +97,18 @@ class SubmissionDetailAssemblerTest {
 
         assertThat(assembler.assemble(s)).isEmpty();
     }
+
+    @Test
+    void aLongActualOutputIsCapped() {
+        JudgeResultDto big = JudgeResultDto.builder().testCase("1").result(-1).cpuTime(1).realTime(1).memory(1L)
+                .output("x".repeat(70_000)).outputMd5("m").build();
+        Submission s = submissionWith(List.of(big));
+        when(problemCatalog.sampleCases(s.getProblemId()))
+                .thenReturn(Map.of("1", new SampleTestCase("1", "3 4", "7")));
+
+        String actual = assembler.assemble(s).get(0).getActualOutput();
+
+        assertThat(actual).endsWith(vn.thanhtuanle.oj.common.text.TextCaps.TRUNCATION_MARK);
+        assertThat(actual).hasSize(65536 + vn.thanhtuanle.oj.common.text.TextCaps.TRUNCATION_MARK.length());
+    }
 }

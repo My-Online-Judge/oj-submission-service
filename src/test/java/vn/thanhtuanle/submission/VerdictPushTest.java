@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 
@@ -117,5 +118,14 @@ class VerdictPushTest {
         } finally {
             pool.shutdown();
         }
+    }
+
+    @Test
+    void shutdownStopsQueuedPushes() {
+        ExecutorService executor = org.mockito.Mockito.mock(ExecutorService.class);
+
+        push(executor).shutdown();
+
+        verify(executor).shutdownNow();
     }
 }

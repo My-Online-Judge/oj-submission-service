@@ -5,7 +5,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import vn.thanhtuanle.submission.dto.SubmissionResponseDto;
 
-import java.io.IOException;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -26,10 +25,20 @@ public class SubmissionSseRegistry {
 
     public SseEmitter subscribe(String submissionId) {
         SseEmitter emitter = new SseEmitter(TIMEOUT_MS);
-        emitters.put(submissionId, emitter);
-        emitter.onCompletion(() -> emitters.remove(submissionId));
-        emitter.onTimeout(() -> emitters.remove(submissionId));
+        emitter.onCompletion(() -> onDone(submissionId, emitter));
+        emitter.onTimeout(() -> onDone(submissionId, emitter));
+        emitter.onError(e -> onDone(submissionId, emitter));
+        register(submissionId, emitter);
         return emitter;
+    }
+
+    void register(String submissionId, SseEmitter emitter) {
+        emitters.put(submissionId, emitter);
+    }
+
+    /** A callback of a replaced emitter must not evict the one that replaced it. */
+    void onDone(String submissionId, SseEmitter emitter) {
+        emitters.remove(submissionId, emitter);
     }
 
     /** Whether this instance holds an SSE subscriber for the submission. */
@@ -45,9 +54,13 @@ public class SubmissionSseRegistry {
         try {
             emitter.send(SseEmitter.event().name("verdict").data(payload));
             emitter.complete();
-        } catch (IOException e) {
+        } catch (Exception e) {
             log.warn("Failed to push SSE verdict for {}", submissionId, e);
-            emitter.completeWithError(e);
+            try {
+                emitter.completeWithError(e);
+            } catch (Exception ignored) {
+                // already completed or the connection is gone; the emitter is out of the map
+            }
         }
     }
 }

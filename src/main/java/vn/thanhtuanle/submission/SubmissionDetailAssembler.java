@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import vn.thanhtuanle.entity.Submission;
+import vn.thanhtuanle.oj.common.text.TextCaps;
 import vn.thanhtuanle.judge.dto.JudgeResultDto;
 import vn.thanhtuanle.submission.dto.TestCaseResultDto;
 import vn.thanhtuanle.submission.problem.ProblemCatalog;
@@ -58,7 +59,7 @@ public class SubmissionDetailAssembler {
         if (sample != null) {
             row.input(sample.input())
                .expectedOutput(sample.expectedOutput())
-               .actualOutput(d.getOutput());
+               .actualOutput(TextCaps.cap(d.getOutput(), TextCaps.SAMPLE_MAX_CHARS));
         }
         // Hidden: input/expectedOutput/actualOutput are left unset. `output_md5`, `signal`,
         // `exit_code` and `error` are never exposed to users at all.

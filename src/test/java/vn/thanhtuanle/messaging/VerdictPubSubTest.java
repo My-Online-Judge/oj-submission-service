@@ -123,4 +123,13 @@ class VerdictPubSubTest {
 
         verify(verdictPush).pushIfWatched("sub-3");
     }
+
+    @Test
+    void aMessageWithUnknownFieldsIsStillHandled() {
+        // A strict mapper: the record itself must tolerate fields it does not know.
+        new VerdictPubSub(redisTemplate, new ObjectMapper(), verdictPush, registry)
+                .onMessage(message("{\"submissionId\":\"s1\",\"extra\":1}"), null);
+
+        verify(verdictPush).pushIfWatched("s1");
+    }
 }

@@ -98,7 +98,7 @@ public class VerdictPush {
     @PreDestroy
     void shutdown() {
         if (executor instanceof ExecutorService service) {
-            service.shutdown();
+            service.shutdownNow();
         }
     }
 }

@@ -34,3 +34,6 @@ oj:
   outbox:
     # Tests drive OutboxRelay directly; no background dispatch against the H2 database.
     relay-enabled: false
+judge:
+  # The reconcile job's SQL is Postgres-only: it never runs on its own in tests (SubmissionTimeoutsTest calls it).
+  reconcile-initial-delay-ms: 86400000

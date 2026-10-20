@@ -84,8 +84,11 @@ logging:
 judge:
   server:
     token: default_token
-  # Reconcile job: a submission left in PENDING/JUDGING longer than this is flipped to SYSTEM_ERROR.
-  stuck-timeout-min: ${JUDGE_STUCK_TIMEOUT_MIN:5}
+  # Reconcile job (SubmissionReconcileJob): a JUDGING submission whose worker started longer ago than this is failed
+  # with SYSTEM_ERROR ("Judging timed out")...
+  judging-timeout: ${JUDGE_JUDGING_TIMEOUT:3m}
+  # ...and a PENDING one whose judge request left the outbox longer ago than this ("Judging request lost").
+  pending-timeout: ${JUDGE_PENDING_TIMEOUT:30m}
   reconcile-interval-ms: ${JUDGE_RECONCILE_INTERVAL_MS:60000}
 
 oj:

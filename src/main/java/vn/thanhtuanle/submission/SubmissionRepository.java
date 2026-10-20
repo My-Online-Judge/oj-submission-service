@@ -20,24 +20,6 @@ import vn.thanhtuanle.judge.dto.JudgeResultDto;
 @Repository
 public interface SubmissionRepository extends JpaRepository<Submission, UUID> {
 
-    /**
-     * Non-terminal submissions (PENDING/JUDGING) whose judging should have finished: created before the
-     * threshold and — when their judge request went through the outbox — sent before it too. A request
-     * still waiting in the outbox (Kafka down) has not started judging, and one sent after the threshold
-     * has had too little time; flipping either to SYSTEM_ERROR would discard the real verdict that follows.
-     * Submissions without an outbox row (sent before 2a, or the row cleaned up) count from creation.
-     */
-    @Query("""
-            SELECT s FROM Submission s
-            WHERE s.status IN :statuses AND s.createdAt < :threshold
-              AND NOT EXISTS (SELECT 1 FROM OutboxMessage o
-                              WHERE o.topic = 'submission.requested'
-                                AND o.messageKey = CAST(s.id AS String)
-                                AND (o.publishedAt IS NULL OR o.publishedAt >= :threshold))
-            """)
-    List<Submission> findStuck(@Param("statuses") Collection<Integer> statuses,
-                               @Param("threshold") LocalDateTime threshold);
-
     /** Count submissions currently in one of the given statuses — used by the oj.queue.depth gauge. */
     long countByStatusIn(Collection<Integer> statuses);
 

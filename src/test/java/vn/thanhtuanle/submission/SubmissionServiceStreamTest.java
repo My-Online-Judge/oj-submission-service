@@ -6,6 +6,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.InOrder;
 import org.mockito.Mock;
+import org.mockito.Spy;
+import org.springframework.transaction.support.TransactionOperations;
 import org.mockito.junit.jupiter.MockitoExtension;
 import vn.thanhtuanle.messaging.outbox.OutboxWriter;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -42,6 +44,8 @@ class SubmissionServiceStreamTest {
     @Mock SubmissionSseRegistry sseRegistry;
     @Mock SubmissionDetailAssembler detailAssembler;
     @Mock EntityManager entityManager;
+
+    @Spy TransactionOperations transactions = TransactionOperations.withoutTransaction();
 
     @InjectMocks SubmissionService submissionService;
 

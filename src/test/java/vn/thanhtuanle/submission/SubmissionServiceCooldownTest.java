@@ -5,6 +5,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
+import org.springframework.transaction.support.TransactionOperations;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
@@ -51,6 +53,8 @@ class SubmissionServiceCooldownTest {
     @Mock OutboxWriter outboxWriter;
     @Mock SubmissionSseRegistry sseRegistry;
     @Mock SubmissionRateLimiter submissionRateLimiter;
+
+    @Spy TransactionOperations transactions = TransactionOperations.withoutTransaction();
 
     @InjectMocks SubmissionService service;
 

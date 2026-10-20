@@ -5,6 +5,11 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
+import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.support.TransactionOperations;
+import vn.thanhtuanle.common.exception.ErrorCode;
+import vn.thanhtuanle.oj.common.web.error.RateLimitedException;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import vn.thanhtuanle.messaging.outbox.OutboxWriter;
@@ -44,6 +49,8 @@ class SubmissionServiceSubmitTest {
     @Mock OutboxWriter outboxWriter;
     @Mock SubmissionSseRegistry sseRegistry;
     @Mock SubmissionRateLimiter submissionRateLimiter;
+
+    @Spy TransactionOperations transactions = TransactionOperations.withoutTransaction();
 
     @InjectMocks SubmissionService submissionService;
 
@@ -100,5 +107,24 @@ class SubmissionServiceSubmitTest {
 
         assertThatThrownBy(() -> submissionService.submit(req)).isInstanceOf(ResourceNotFoundException.class);
         verifyNoInteractions(submissionRateLimiter, submissionRepository, outboxWriter);
+    }
+
+    @Test
+    void aCooldownRefusalOpensNoTransaction() {
+        TransactionOperations mockTransactions = mock(TransactionOperations.class);
+        ReflectionTestUtils.setField(submissionService, "transactions", mockTransactions);
+        UUID userId = UUID.randomUUID();
+        when(problemCatalog.judgeSpec("a-plus-b"))
+                .thenReturn(new JudgeSpec(UUID.randomUUID(), "a-plus-b", 1000, 256L, "abc123def456"));
+        when(languageRepository.findByIdentifier("cpp")).thenReturn(Optional.of(new Language()));
+        when(currentUser.id()).thenReturn(userId);
+        doThrow(new RateLimitedException(ErrorCode.SUBMISSION_RATE_LIMITED, 7))
+                .when(submissionRateLimiter).acquire(userId);
+
+        assertThatThrownBy(() -> submissionService.submit(SubmissionRequestDto.builder()
+                .sourceCode("int main(){}").languageIdentifier("cpp").problemSlug("a-plus-b").build()))
+                .isInstanceOf(RateLimitedException.class);
+
+        verifyNoInteractions(mockTransactions);
     }
 }

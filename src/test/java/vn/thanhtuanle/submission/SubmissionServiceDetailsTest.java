@@ -4,6 +4,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
+import org.springframework.transaction.support.TransactionOperations;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import vn.thanhtuanle.entity.Submission;
@@ -28,6 +30,8 @@ class SubmissionServiceDetailsTest {
     @Mock SubmissionMapper submissionMapper;
     @Mock SubmissionDetailAssembler detailAssembler;
     @Mock CurrentUser currentUser;
+    @Spy TransactionOperations transactions = TransactionOperations.withoutTransaction();
+
     @InjectMocks SubmissionService service;
 
     @Test

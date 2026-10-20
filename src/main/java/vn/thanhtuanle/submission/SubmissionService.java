@@ -11,6 +11,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionOperations;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import vn.thanhtuanle.common.constant.Permissions;
 import vn.thanhtuanle.common.enums.SubmissionResult;
@@ -50,8 +51,13 @@ public class SubmissionService {
     private final EntityManager entityManager;
     private final SubmissionRateLimiter submissionRateLimiter;
     private final CurrentUser currentUser;
+    private final TransactionOperations transactions;
 
-    @Transactional
+    /**
+     * Not transactional as a whole: the gRPC call and the Redis cooldown must not hold a database connection while
+     * they wait. Everything that can refuse the request comes first; only the row and its outbox message are one
+     * transaction.
+     */
     public SubmissionResponseDto submit(SubmissionRequestDto req) {
         log.info("Start submission for problem: {}", req.getProblemSlug());
         judgeService.validate(req.getSourceCode());
@@ -68,6 +74,11 @@ public class SubmissionService {
         // and before the row exists so a throttled submit leaves no trace.
         submissionRateLimiter.acquire(userId);
 
+        return transactions.execute(status -> persistAndQueue(req, spec, language, userId));
+    }
+
+    private SubmissionResponseDto persistAndQueue(SubmissionRequestDto req, JudgeSpec spec, Language language,
+            UUID userId) {
         Submission submission = createPendingSubmission(req, spec, language, userId);
         submissionRepository.save(submission);
         MDC.put("submissionId", submission.getId().toString());

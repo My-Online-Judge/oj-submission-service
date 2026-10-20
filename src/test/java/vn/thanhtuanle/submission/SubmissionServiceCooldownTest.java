@@ -17,6 +17,7 @@ import vn.thanhtuanle.oj.common.web.error.RateLimitedException;
 import vn.thanhtuanle.oj.common.web.error.ResourceNotFoundException;
 import vn.thanhtuanle.entity.Language;
 import vn.thanhtuanle.entity.Submission;
+import vn.thanhtuanle.judge.CheckerLanguages;
 import vn.thanhtuanle.judge.JudgeService;
 import vn.thanhtuanle.language.LanguageRepository;
 import vn.thanhtuanle.messaging.event.SubmissionRequestedEvent;
@@ -56,6 +57,7 @@ class SubmissionServiceCooldownTest {
     @Mock SubmissionSseRegistry sseRegistry;
     @Mock SubmissionRateLimiter submissionRateLimiter;
     @Mock SubmissionAdmission admission;
+    @Mock CheckerLanguages checkerLanguages;
 
     @Spy TransactionOperations transactions = TransactionOperations.withoutTransaction();
 
@@ -80,7 +82,7 @@ class SubmissionServiceCooldownTest {
             s.setId(UUID.randomUUID());
             return s;
         });
-        when(judgeService.buildRequestedEvent(anyString(), anyString(), any(), any(), anyInt()))
+        when(judgeService.buildRequestedEvent(anyString(), anyString(), any(), any(), anyInt(), any()))
                 .thenReturn(SubmissionRequestedEvent.builder().build());
         when(submissionMapper.toDto(any(Submission.class))).thenReturn(new SubmissionResponseDto());
     }

@@ -66,10 +66,12 @@ public class GrpcProblemCatalog implements ProblemCatalog {
         GetJudgeSpecRequest request = builder.build();
         try {
             var spec = call(circuitBreaker, retry, () -> withDeadline().getJudgeSpec(request));
-            // An empty contest_id means none: practice, or a problem-service that predates contests.
+            // An empty contest_id means none: practice, or a problem-service that predates contests. Likewise an
+            // empty checker: the output is compared as is.
             UUID contestId = spec.getContestId().isEmpty() ? null : UUID.fromString(spec.getContestId());
             return new JudgeSpec(UUID.fromString(spec.getProblemId()), spec.getProblemSlug(), spec.getTimeLimitMs(),
-                    spec.getMemoryLimitMb(), spec.getTestCaseVersion(), contestId);
+                    spec.getMemoryLimitMb(), spec.getTestCaseVersion(), contestId, emptyToNull(spec.getSpjSource()),
+                    emptyToNull(spec.getSpjVersion()));
         } catch (StatusRuntimeException e) {
             switch (e.getStatus().getCode()) {
                 case NOT_FOUND -> throw new ProblemNotFoundException();
@@ -117,6 +119,10 @@ public class GrpcProblemCatalog implements ProblemCatalog {
         } catch (CallNotPermittedException e) {
             throw new ProblemCatalogUnavailableException();
         }
+    }
+
+    private static String emptyToNull(String value) {
+        return value.isEmpty() ? null : value;
     }
 
     private ProblemInternalGrpc.ProblemInternalBlockingStub withDeadline() {

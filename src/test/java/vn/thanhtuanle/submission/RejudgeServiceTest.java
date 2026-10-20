@@ -93,6 +93,25 @@ class RejudgeServiceTest extends PostgresTest {
         return new JudgeSpec(problemId, slug, 2000, 128L, "newhash123");
     }
 
+    static final String CHECKER = "#include <cstdio>\nint main(int argc, char** argv){return 0;}\n";
+
+    private JudgeSpec checkerSpec() {
+        return new JudgeSpec(problemId, slug, 2000, 128L, "newhash123", null, CHECKER, "ab12");
+    }
+
+    /** The four spj fields qduoj needs to judge a checker problem, the checker compiled with the cpp row (V2 + V3). */
+    static void assertCarriesTheChecker(JsonNode request) throws Exception {
+        assertThat(request.get("spj_version").asText()).isEqualTo("ab12");
+        assertThat(request.get("spj_src").asText()).isEqualTo(CHECKER);
+        assertThat(request.get("spj_config")).isEqualTo(new ObjectMapper().readTree("{\"exe_name\":\"spj-{spj_version}\","
+                + "\"command\":\"{exe_path} {in_file_path} {user_out_file_path}\",\"seccomp_rule\":\"c_cpp\"}"));
+        JsonNode compile = request.get("spj_compile_config");
+        assertThat(compile.get("compile_command").asText())
+                .isEqualTo("/usr/bin/g++ -DONLINE_JUDGE -O2 -w -fmax-errors=3 -std=c++17 {src_path} -lm -o {exe_path}");
+        assertThat(compile.get("max_memory").asLong()).isEqualTo(1073741824L);
+        assertThat(compile.get("src_name").asText()).isEqualTo("spj-{spj_version}.cpp");
+    }
+
     @Test
     void aFinishedSubmissionIsResetAndQueuedWithTheCurrentSpec() throws Exception {
         UUID id = insertSubmission(0);
@@ -161,6 +180,26 @@ class RejudgeServiceTest extends PostgresTest {
 
         assertThat(row(id).get("rejudge_count")).isEqualTo(2);
         assertThat(objectMapper.readTree(requests(id).get(0)).get("rejudgeCount").asInt()).isEqualTo(2);
+    }
+
+    /**
+     * qduoj judges a bundle whose info says spj only with a checker: without one it answers "spj_config or
+     * spj_version not set", and the rejudged submission would end in SYSTEM_ERROR.
+     */
+    @Test
+    void aRejudgeOfACheckerProblemCarriesTheChecker() throws Exception {
+        UUID id = insertSubmission(0);
+        jdbc.update("UPDATE t_submissions SET rejudge_count = 2 WHERE id = ?", id);
+        when(problemCatalog.judgeSpec(slug, true)).thenReturn(checkerSpec());
+
+        rejudgeService.rejudge(id);
+
+        List<String> requests = requests(id);
+        assertThat(requests).hasSize(1);
+        JsonNode request = objectMapper.readTree(requests.get(0));
+        assertCarriesTheChecker(request);
+        assertThat(request.get("rejudgeCount").asInt()).isEqualTo(3);
+        assertThat(request.get("test_case_id").asText()).isEqualTo(slug + "__newhash123");
     }
 
     @ParameterizedTest

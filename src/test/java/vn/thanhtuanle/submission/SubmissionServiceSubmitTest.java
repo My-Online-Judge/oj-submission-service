@@ -22,6 +22,7 @@ import vn.thanhtuanle.messaging.outbox.OutboxWriter;
 import vn.thanhtuanle.common.enums.SubmissionResult;
 import vn.thanhtuanle.entity.Language;
 import vn.thanhtuanle.entity.Submission;
+import vn.thanhtuanle.judge.CheckerLanguages;
 import vn.thanhtuanle.judge.JudgeService;
 import vn.thanhtuanle.language.LanguageRepository;
 import vn.thanhtuanle.messaging.event.SubmissionRequestedEvent;
@@ -62,6 +63,7 @@ class SubmissionServiceSubmitTest {
     @Mock SubmissionSseRegistry sseRegistry;
     @Mock SubmissionRateLimiter submissionRateLimiter;
     @Mock SubmissionAdmission admission;
+    @Mock CheckerLanguages checkerLanguages;
 
     @Spy TransactionOperations transactions = TransactionOperations.withoutTransaction();
 
@@ -119,8 +121,8 @@ class SubmissionServiceSubmitTest {
             return s;
         });
         SubmissionRequestedEvent event = SubmissionRequestedEvent.builder().submissionId("x").build();
-        // A new submission is generation 0.
-        when(judgeService.buildRequestedEvent(any(), any(), eq(spec), any(), eq(0))).thenReturn(event);
+        // A new submission is generation 0; a problem without a checker needs no checker language.
+        when(judgeService.buildRequestedEvent(any(), any(), eq(spec), any(), eq(0), isNull())).thenReturn(event);
         when(submissionMapper.toDto(any(Submission.class)))
                 .thenReturn(SubmissionResponseDto.builder()
                         .status(SubmissionResult.PENDING.getValue()).build());
@@ -231,7 +233,7 @@ class SubmissionServiceSubmitTest {
             s.setId(UUID.randomUUID());
             return s;
         });
-        when(judgeService.buildRequestedEvent(any(), any(), eq(spec), any(), eq(0)))
+        when(judgeService.buildRequestedEvent(any(), any(), eq(spec), any(), eq(0), isNull()))
                 .thenReturn(SubmissionRequestedEvent.builder().submissionId("x").build());
 
         submissionService.submit(SubmissionRequestDto.builder()
@@ -241,6 +243,58 @@ class SubmissionServiceSubmitTest {
         ArgumentCaptor<Submission> saved = ArgumentCaptor.forClass(Submission.class);
         verify(submissionRepository).save(saved.capture());
         assertThat(saved.getValue().getContestId()).isEqualTo(contestId);
+    }
+
+    private static Language language(String identifier) {
+        Language language = new Language();
+        language.setIdentifier(identifier);
+        return language;
+    }
+
+    private static JudgeSpec checkerSpec() {
+        return new JudgeSpec(UUID.randomUUID(), "special", 1000, 256L, "abc123def456", null, "int main(){}", "ab12");
+    }
+
+    @Test
+    void aCheckerProblemIsQueuedWithTheCppRowAsItsCheckerLanguage() {
+        ReflectionTestUtils.setField(submissionService, "checkerLanguages", new CheckerLanguages(languageRepository));
+        JudgeSpec spec = checkerSpec();
+        Language python = language("python3");
+        Language cpp = language("cpp");
+        when(problemCatalog.judgeSpec("special", false, null)).thenReturn(spec);
+        when(languageRepository.findByIdentifier("python3")).thenReturn(Optional.of(python));
+        when(languageRepository.findByIdentifier("cpp")).thenReturn(Optional.of(cpp));
+        when(currentUser.id()).thenReturn(UUID.randomUUID());
+        when(submissionRepository.save(any(Submission.class))).thenAnswer(inv -> {
+            Submission s = inv.getArgument(0);
+            s.setId(UUID.randomUUID());
+            return s;
+        });
+        SubmissionRequestedEvent event = SubmissionRequestedEvent.builder().submissionId("x").build();
+        when(judgeService.buildRequestedEvent(any(), any(), eq(spec), eq(python), eq(0), eq(cpp))).thenReturn(event);
+
+        submissionService.submit(SubmissionRequestDto.builder()
+                .sourceCode("print(1)").languageIdentifier("python3").problemSlug("special").build());
+
+        verify(outboxWriter).append("submission.requested", "x", event);
+    }
+
+    @Test
+    void submitOfACheckerProblemWithoutCppFails() {
+        ReflectionTestUtils.setField(submissionService, "checkerLanguages", new CheckerLanguages(languageRepository));
+        when(problemCatalog.judgeSpec("special", false, null)).thenReturn(checkerSpec());
+        when(languageRepository.findByIdentifier("python3")).thenReturn(Optional.of(language("python3")));
+        when(languageRepository.findByIdentifier("cpp")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> submissionService.submit(SubmissionRequestDto.builder()
+                .sourceCode("print(1)").languageIdentifier("python3").problemSlug("special").build()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("The C++ language is required to compile this problem's checker");
+
+        // Refused before the cooldown and the row: nothing to give back but the queue slot.
+        verifyNoInteractions(submissionRateLimiter, submissionRepository, outboxWriter);
+        verify(admission).admit(1);
+        verify(admission).release(1);
     }
 
     @Test

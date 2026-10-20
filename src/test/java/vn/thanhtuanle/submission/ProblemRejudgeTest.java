@@ -1,5 +1,6 @@
 package vn.thanhtuanle.submission;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -204,9 +205,31 @@ class ProblemRejudgeTest extends PostgresTest {
     }
 
     private int requestedGeneration(UUID id) throws Exception {
+        return request(id).get("rejudgeCount").asInt();
+    }
+
+    private JsonNode request(UUID id) throws Exception {
         String payload = jdbc.queryForObject("SELECT convert_from(payload, 'UTF8') FROM t_outbox "
                 + "WHERE topic = 'submission.requested' AND message_key = ?", String.class, id.toString());
-        return objectMapper.readTree(payload).get("rejudgeCount").asInt();
+        return objectMapper.readTree(payload);
+    }
+
+    /** See {@link RejudgeServiceTest#aRejudgeOfACheckerProblemCarriesTheChecker}: here, every request of the batch. */
+    @Test
+    void aRejudgeOfACheckerProblemCarriesTheChecker() throws Exception {
+        List<UUID> ids = insert(AC, WA);
+        jdbc.update("UPDATE t_submissions SET rejudge_count = 2 WHERE id = ?", ids.get(1));
+        when(problemCatalog.judgeSpec(slug, true)).thenReturn(new JudgeSpec(problemId, slug, 2000, 128L,
+                "newhash123", null, RejudgeServiceTest.CHECKER, "ab12"));
+
+        RejudgeQueued result = rejudgeService.rejudgeProblem(slug, null);
+
+        assertThat(result.queued()).isEqualTo(2);
+        for (UUID id : ids) {
+            RejudgeServiceTest.assertCarriesTheChecker(request(id));
+        }
+        assertThat(requestedGeneration(ids.get(0))).isEqualTo(1);
+        assertThat(requestedGeneration(ids.get(1))).isEqualTo(3);
     }
 
     @ParameterizedTest

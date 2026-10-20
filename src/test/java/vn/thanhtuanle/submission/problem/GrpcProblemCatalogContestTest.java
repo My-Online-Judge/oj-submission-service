@@ -30,7 +30,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * A contest submit against an in-process problem-service: the contest slug rides on the request, the contest id
  * comes back on the spec, and a contest that is not running is the submitter's 400, told apart from a problem
- * without a bundle by the {@code oj-reason} trailer.
+ * without a bundle by the {@code oj-reason} trailer. A checker problem's spec carries the checker; an empty field means
+ * none.
  */
 class GrpcProblemCatalogContestTest {
 
@@ -106,6 +107,23 @@ class GrpcProblemCatalogContestTest {
 
         assertThat(judged.contestId()).isNull();
         assertThat(problems.lastRequest.getContestSlug()).as("practice names no contest").isEmpty();
+    }
+
+    @Test
+    void spjFieldsAreMapped() {
+        problems.answer = spec().setSpjSource("int main(){return 0;}").setSpjVersion("ab12").build();
+
+        vn.thanhtuanle.submission.problem.JudgeSpec checker = catalog.judgeSpec("a-plus-b", false);
+
+        assertThat(checker.spjSource()).isEqualTo("int main(){return 0;}");
+        assertThat(checker.spjVersion()).isEqualTo("ab12");
+
+        problems.answer = spec().build();
+
+        vn.thanhtuanle.submission.problem.JudgeSpec plain = catalog.judgeSpec("a-plus-b", false);
+
+        assertThat(plain.spjSource()).as("empty means no checker").isNull();
+        assertThat(plain.spjVersion()).isNull();
     }
 
     /** Answers every GetJudgeSpec with {@link #failure} when set, else with {@link #answer}. */

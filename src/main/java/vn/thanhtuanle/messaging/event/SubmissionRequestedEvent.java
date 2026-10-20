@@ -1,11 +1,14 @@
 package vn.thanhtuanle.messaging.event;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import vn.thanhtuanle.judge.dto.JudgeCompileConfigDto;
 import vn.thanhtuanle.judge.dto.JudgeLanguageConfigDto;
+import vn.thanhtuanle.judge.dto.JudgeSpjConfigDto;
 
 @Data
 @Builder
@@ -35,4 +38,24 @@ public class SubmissionRequestedEvent {
      * earlier generation is not applied to a rejudged row.
      */
     private Integer rejudgeCount;
+
+    /*
+     * A checker problem's checker, under the names qduoj's JudgeServer.judge takes. All four are set together or not
+     * at all; left out when null, so a plain problem's request is what it was.
+     */
+    @JsonProperty("spj_version")
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private String spjVersion;
+
+    @JsonProperty("spj_config")
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private JudgeSpjConfigDto spjConfig;
+
+    @JsonProperty("spj_compile_config")
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private JudgeCompileConfigDto spjCompileConfig;
+
+    @JsonProperty("spj_src")
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private String spjSrc;
 }

@@ -48,6 +48,6 @@ class JudgeServiceLanguageConfigTest {
         l.setExeName("main");
         l.setCompileCommand("cc {src_path}");
         l.setRunCommand("{exe_path}");
-        return service.buildRequestedEvent("sub-1", "src", spec, l, 0).getLanguageConfig();
+        return service.buildRequestedEvent("sub-1", "src", spec, l, 0, null).getLanguageConfig();
     }
 }

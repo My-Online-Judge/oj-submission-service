@@ -10,6 +10,7 @@ import vn.thanhtuanle.common.enums.SubmissionResult;
 import vn.thanhtuanle.common.exception.ErrorCode;
 import vn.thanhtuanle.entity.Language;
 import vn.thanhtuanle.entity.Submission;
+import vn.thanhtuanle.judge.CheckerLanguages;
 import vn.thanhtuanle.judge.JudgeService;
 import vn.thanhtuanle.messaging.KafkaTopics;
 import vn.thanhtuanle.messaging.event.SubmissionRequestedEvent;
@@ -50,6 +51,7 @@ public class RejudgeService {
     private final OutboxWriter outboxWriter;
     private final SubmissionAdmission admission;
     private final TransactionOperations transactions;
+    private final CheckerLanguages checkerLanguages;
 
     public SubmissionResponseDto rejudge(UUID id) {
         Submission submission = submissionRepository.findWithLanguageById(id)
@@ -61,6 +63,7 @@ public class RejudgeService {
         admission.admit(1);
         try {
             JudgeSpec spec = problemCatalog.judgeSpec(submission.getProblemSlug(), true);
+            Language checkerLanguage = checkerLanguages.forSpec(spec);
             String sourceCode = submission.getSourceCode();
             Language language = submission.getLanguage();
             transactions.executeWithoutResult(status -> {
@@ -69,7 +72,7 @@ public class RejudgeService {
                 }
                 // Re-read rather than the loaded count + 1: another rejudge may have run to its verdict since the
                 // load. The reset holds the row lock until commit, so this is the generation this reset set.
-                queue(id, sourceCode, spec, language, submissionRepository.findRejudgeCountById(id));
+                queue(id, sourceCode, spec, language, checkerLanguage, submissionRepository.findRejudgeCountById(id));
             });
         } catch (RuntimeException | Error e) {
             admission.release(1);
@@ -106,7 +109,8 @@ public class RejudgeService {
         Integer queued;
         try {
             JudgeSpec spec = problemCatalog.judgeSpec(slug, true);
-            queued = transactions.execute(tx -> resetAndQueue(taken, spec));
+            Language checkerLanguage = checkerLanguages.forSpec(spec);
+            queued = transactions.execute(tx -> resetAndQueue(taken, spec, checkerLanguage));
         } catch (RuntimeException | Error e) {
             admission.release(reserved);
             throw e;
@@ -124,7 +128,7 @@ public class RejudgeService {
      * Resets each candidate still finished, then queues one judge request for each row actually reset, carrying the
      * generation the reset gave it (the rows are re-read after the resets).
      */
-    private int resetAndQueue(List<UUID> candidates, JudgeSpec spec) {
+    private int resetAndQueue(List<UUID> candidates, JudgeSpec spec, Language checkerLanguage) {
         LocalDateTime now = LocalDateTime.now();
         List<UUID> reset = new ArrayList<>();
         for (UUID id : candidates) {
@@ -136,16 +140,20 @@ public class RejudgeService {
             return 0;
         }
         for (Submission submission : submissionRepository.findWithLanguageByIdIn(reset)) {
-            queue(submission.getId(), submission.getSourceCode(), spec, submission.getLanguage(),
+            queue(submission.getId(), submission.getSourceCode(), spec, submission.getLanguage(), checkerLanguage,
                     submission.getRejudgeCount());
         }
         return reset.size();
     }
 
-    /** Appends the judge request; the outbox relay sends it once the caller's transaction has committed. */
-    private void queue(UUID id, String sourceCode, JudgeSpec spec, Language language, int rejudgeCount) {
-        SubmissionRequestedEvent event =
-                judgeService.buildRequestedEvent(id.toString(), sourceCode, spec, language, rejudgeCount);
+    /**
+     * Appends the judge request, with the problem's checker when it has one; the outbox relay sends it once the
+     * caller's transaction has committed.
+     */
+    private void queue(UUID id, String sourceCode, JudgeSpec spec, Language language, Language checkerLanguage,
+            int rejudgeCount) {
+        SubmissionRequestedEvent event = judgeService.buildRequestedEvent(id.toString(), sourceCode, spec, language,
+                rejudgeCount, checkerLanguage);
         outboxWriter.append(KafkaTopics.SUBMISSION_REQUESTED, event.getSubmissionId(), event);
     }
 

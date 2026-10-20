@@ -26,6 +26,7 @@ import vn.thanhtuanle.oj.common.web.payload.PageResponse;
 import vn.thanhtuanle.oj.common.web.payload.PageSizes;
 import vn.thanhtuanle.entity.Language;
 import vn.thanhtuanle.entity.Submission;
+import vn.thanhtuanle.judge.CheckerLanguages;
 import vn.thanhtuanle.judge.JudgeService;
 import vn.thanhtuanle.messaging.KafkaTopics;
 import vn.thanhtuanle.messaging.event.SubmissionRequestedEvent;
@@ -65,6 +66,7 @@ public class SubmissionService {
     private final CurrentUser currentUser;
     private final TransactionOperations transactions;
     private final PublicUserClient publicUserClient;
+    private final CheckerLanguages checkerLanguages;
 
     /**
      * Not transactional as a whole: the gRPC call and the Redis cooldown must not hold a database connection while
@@ -86,6 +88,7 @@ public class SubmissionService {
             Language language = languageRepository.findByIdentifier(req.getLanguageIdentifier())
                     .filter(l -> !l.isDisabled())
                     .orElseThrow(() -> new ResourceNotFoundException("Language not found"));
+            Language checkerLanguage = checkerLanguages.forSpec(spec);
             UUID userId = currentUser.id();
 
             // Cooldown gate: sits after problem/language/user resolve so a 404 never burns it,
@@ -93,7 +96,7 @@ public class SubmissionService {
             submissionRateLimiter.acquire(userId);
             cooledDown = userId;
 
-            return transactions.execute(status -> persistAndQueue(req, spec, language, userId));
+            return transactions.execute(status -> persistAndQueue(req, spec, language, checkerLanguage, userId));
         } catch (RuntimeException | Error e) {
             admission.release(1);
             if (cooledDown != null) {
@@ -104,13 +107,13 @@ public class SubmissionService {
     }
 
     private SubmissionResponseDto persistAndQueue(SubmissionRequestDto req, JudgeSpec spec, Language language,
-            UUID userId) {
+            Language checkerLanguage, UUID userId) {
         Submission submission = createPendingSubmission(req, spec, language, userId);
         submissionRepository.save(submission);
         MDC.put("submissionId", submission.getId().toString());
         try {
             SubmissionRequestedEvent event = judgeService.buildRequestedEvent(
-                    submission.getId().toString(), submission.getSourceCode(), spec, language, 0);
+                    submission.getId().toString(), submission.getSourceCode(), spec, language, 0, checkerLanguage);
             // Sent by the outbox relay once this transaction has committed — never for a rolled-back row.
             outboxWriter.append(KafkaTopics.SUBMISSION_REQUESTED, event.getSubmissionId(), event);
             log.info("Submission {} queued for judging", submission.getId());

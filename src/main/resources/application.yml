@@ -9,6 +9,12 @@ spring:
   # and unaffected by this — those are pinned via TimeZone.setDefault in SubmissionServiceApplication.main.
   jackson:
     time-zone: Asia/Ho_Chi_Minh
+  jpa:
+    # Off: with open-in-view the request's EntityManager keeps the JDBC connection it first used until the response
+    # is written (for a verdict stream, until the stream ends), so a request that then waits on problem-service,
+    # identity or Redis would hold a pooled connection all that time. Every HTTP path reads entities inside a
+    # transaction or through an entity graph.
+    open-in-view: false
   task:
     scheduling:
       # The outbox relay poll can block 5-15 s while Kafka is down; the queue-depth refresh and the reconcile job

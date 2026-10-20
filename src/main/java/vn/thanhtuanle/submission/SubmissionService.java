@@ -138,9 +138,9 @@ public class SubmissionService {
     /**
      * The admin search over every submission, newest first. The username is resolved to an id once; an unknown name
      * gives an empty page, and identity being down is a 503. Page usernames come from the (cached) profile lookup
-     * and are null when identity cannot answer.
+     * and are null when identity cannot answer. Not transactional: identity is called before and after the page's
+     * read, never inside a transaction, so a slow identity never holds a database connection.
      */
-    @Transactional(readOnly = true)
     public PageResponse<SubmissionListItemDto> search(SubmissionSearch q) {
         Pageable pageable = PageRequest.of(q.page(), PageSizes.cap(q.size()), Sort.by(Sort.Direction.DESC, "createdAt"));
         UUID userId = null;
@@ -154,6 +154,8 @@ public class SubmissionService {
                 return PageResponse.of(Page.empty(pageable));
             }
         }
+        // The repository's own read-only transaction; the page comes with its languages (an entity graph), so it
+        // maps after it.
         Page<Submission> found = submissionRepository.findAll(
                 SubmissionSpecifications.matching(q.problemSlug(), userId, q.result(), q.from(), q.to()), pageable);
         Map<UUID, PublicUser> users = publicUserClient.byIds(

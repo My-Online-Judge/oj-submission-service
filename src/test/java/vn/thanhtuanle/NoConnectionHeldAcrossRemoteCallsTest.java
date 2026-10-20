@@ -25,6 +25,8 @@ import vn.thanhtuanle.oj.common.identity.PublicUserClient;
 import vn.thanhtuanle.oj.common.security.OjJwtDecoders;
 import vn.thanhtuanle.submission.SubmissionRateLimiter;
 import vn.thanhtuanle.submission.SubmissionRepository;
+import vn.thanhtuanle.submission.SubmissionSseRegistry;
+import vn.thanhtuanle.submission.dto.SubmissionResponseDto;
 import vn.thanhtuanle.submission.problem.JudgeSpec;
 import vn.thanhtuanle.submission.problem.ProblemCatalog;
 import vn.thanhtuanle.support.PostgresTest;
@@ -44,9 +46,11 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
@@ -66,6 +70,7 @@ class NoConnectionHeldAcrossRemoteCallsTest extends PostgresTest {
     @Autowired SubmissionRepository submissions;
     @Autowired LanguageRepository languages;
     @Autowired JdbcTemplate jdbc;
+    @Autowired SubmissionSseRegistry sseRegistry;
 
     @MockitoBean ProblemCatalog catalog;
     @MockitoBean PublicUserClient publicUserClient;
@@ -169,5 +174,25 @@ class NoConnectionHeldAcrossRemoteCallsTest extends PostgresTest {
 
         assertThat(activeAtCalls).as("active connections during GetJudgeSpec, then the Redis cooldown")
                 .containsExactly(0, 0);
+    }
+
+    /**
+     * A verdict stream stays open up to 5 minutes. The submission is read and authorized in a short transaction before
+     * the emitter is returned, and nothing is held while it waits for the verdict.
+     */
+    @Test
+    void anOpenVerdictStreamHoldsNoConnection() throws Exception {
+        UUID id = add(SubmissionResult.PENDING.getValue());
+
+        MvcResult stream = mockMvc.perform(get("/api/v1/submissions/{id}/stream", id).with(signedIn()))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+        try {
+            assertThat(sseRegistry.holds(id.toString())).as("the stream is open").isTrue();
+            assertThat(pool.getActiveConnections()).as("active connections while the stream waits").isZero();
+        } finally {
+            sseRegistry.complete(id.toString(), SubmissionResponseDto.builder().build());
+            mockMvc.perform(asyncDispatch(stream));
+        }
     }
 }

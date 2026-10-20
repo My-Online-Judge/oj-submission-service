@@ -9,8 +9,10 @@ import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.transaction.support.TransactionOperations;
 
+import vn.thanhtuanle.oj.common.identity.PublicUserClient;
 import vn.thanhtuanle.oj.common.security.CurrentUser;
 import vn.thanhtuanle.submission.mapper.SubmissionMapper;
 
@@ -30,6 +32,7 @@ class PageSizeCapTest {
     @Mock SubmissionRepository submissionRepository;
     @Mock SubmissionMapper submissionMapper;
     @Mock CurrentUser currentUser;
+    @Mock PublicUserClient publicUserClient;
     @Spy TransactionOperations transactions = TransactionOperations.withoutTransaction();
 
     @InjectMocks SubmissionService service;
@@ -37,13 +40,14 @@ class PageSizeCapTest {
     private final ArgumentCaptor<Pageable> pageable = ArgumentCaptor.forClass(Pageable.class);
 
     @Test
-    void byProblemSlugClampsTo100() {
-        when(submissionRepository.findByProblemSlugOrderByCreatedAtDesc(eq("a-plus-b"), any(Pageable.class)))
+    @SuppressWarnings("unchecked")
+    void searchClampsTo100() {
+        when(submissionRepository.findAll(any(Specification.class), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of()));
 
-        service.getSubmissionsByProblemSlug("a-plus-b", 0, 500);
+        service.search(new SubmissionSearch("a-plus-b", null, null, null, null, 0, 500));
 
-        verify(submissionRepository).findByProblemSlugOrderByCreatedAtDesc(eq("a-plus-b"), pageable.capture());
+        verify(submissionRepository).findAll(any(Specification.class), pageable.capture());
         assertThat(pageable.getValue().getPageSize()).isEqualTo(100);
     }
 

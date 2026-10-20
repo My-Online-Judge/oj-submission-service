@@ -16,6 +16,11 @@ import org.springframework.transaction.support.TransactionOperations;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import vn.thanhtuanle.common.constant.Permissions;
 import vn.thanhtuanle.common.enums.SubmissionResult;
+import vn.thanhtuanle.common.exception.ErrorCode;
+import vn.thanhtuanle.oj.common.identity.IdentityUnavailableException;
+import vn.thanhtuanle.oj.common.identity.PublicUser;
+import vn.thanhtuanle.oj.common.identity.PublicUserClient;
+import vn.thanhtuanle.oj.common.web.error.AppException;
 import vn.thanhtuanle.oj.common.web.error.ResourceNotFoundException;
 import vn.thanhtuanle.oj.common.web.payload.PageResponse;
 import vn.thanhtuanle.oj.common.web.payload.PageSizes;
@@ -26,6 +31,7 @@ import vn.thanhtuanle.messaging.KafkaTopics;
 import vn.thanhtuanle.messaging.event.SubmissionRequestedEvent;
 import vn.thanhtuanle.messaging.outbox.OutboxWriter;
 import vn.thanhtuanle.oj.common.security.CurrentUser;
+import vn.thanhtuanle.submission.dto.SubmissionListItemDto;
 import vn.thanhtuanle.submission.dto.SubmissionRequestDto;
 import vn.thanhtuanle.submission.dto.SubmissionResponseDto;
 import vn.thanhtuanle.submission.mapper.SubmissionMapper;
@@ -34,7 +40,9 @@ import vn.thanhtuanle.submission.problem.ProblemCatalog;
 import vn.thanhtuanle.language.LanguageRepository;
 
 
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -55,6 +63,7 @@ public class SubmissionService {
     private final SubmissionAdmission admission;
     private final CurrentUser currentUser;
     private final TransactionOperations transactions;
+    private final PublicUserClient publicUserClient;
 
     /**
      * Not transactional as a whole: the gRPC call and the Redis cooldown must not hold a database connection while
@@ -125,15 +134,34 @@ public class SubmissionService {
                 .build();
     }
 
-    /** An unknown slug gives an empty page: the slug is matched on the submissions, no problem is looked up. */
+    /**
+     * The admin search over every submission, newest first. The username is resolved to an id once; an unknown name
+     * gives an empty page, and identity being down is a 503. Page usernames come from the (cached) profile lookup
+     * and are null when identity cannot answer.
+     */
     @Transactional(readOnly = true)
-    public PageResponse<SubmissionResponseDto> getSubmissionsByProblemSlug(String problemSlug, int page, int size) {
-        log.info("Service to get submissions by problem slug: {}", problemSlug);
-
-        Pageable pageable = PageRequest.of(page, PageSizes.cap(size));
-        return PageResponse.of(submissionRepository
-                .findByProblemSlugOrderByCreatedAtDesc(problemSlug, pageable)
-                .map(submissionMapper::toDto));
+    public PageResponse<SubmissionListItemDto> search(SubmissionSearch q) {
+        Pageable pageable = PageRequest.of(q.page(), PageSizes.cap(q.size()), Sort.by(Sort.Direction.DESC, "createdAt"));
+        UUID userId = null;
+        if (q.username() != null && !q.username().isBlank()) {
+            try {
+                userId = publicUserClient.byUsername(q.username().trim()).map(PublicUser::id).orElse(null);
+            } catch (IdentityUnavailableException e) {
+                throw new AppException(ErrorCode.IDENTITY_UNAVAILABLE);
+            }
+            if (userId == null) {
+                return PageResponse.of(Page.empty(pageable));
+            }
+        }
+        Page<Submission> found = submissionRepository.findAll(
+                SubmissionSpecifications.matching(q.problemSlug(), userId, q.result(), q.from(), q.to()), pageable);
+        Map<UUID, PublicUser> users = publicUserClient.byIds(
+                found.getContent().stream().map(Submission::getUserId).collect(Collectors.toSet()));
+        return PageResponse.of(found.map(s -> {
+            PublicUser u = users.get(s.getUserId());
+            return new SubmissionListItemDto(s.getId(), s.getCreatedAt(), s.getUserId(), u == null ? null : u.username(),
+                    s.getProblemSlug(), s.getLanguage().getName(), s.getStatus(), s.getCpuTime(), s.getMemory());
+        }));
     }
 
     @Transactional(readOnly = true)

@@ -9,7 +9,9 @@ import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -18,7 +20,13 @@ import vn.thanhtuanle.entity.Submission;
 import vn.thanhtuanle.judge.dto.JudgeResultDto;
 
 @Repository
-public interface SubmissionRepository extends JpaRepository<Submission, UUID> {
+public interface SubmissionRepository extends JpaRepository<Submission, UUID>, JpaSpecificationExecutor<Submission> {
+
+    /** The admin search: a page with the languages loaded in the same query (no N+1). */
+    @Override
+    @EntityGraph(attributePaths = "language")
+    Page<Submission> findAll(Specification<Submission> spec, Pageable pageable);
+
 
     /** Count submissions currently in one of the given statuses — OjMetrics' queue-depth refresh (gauge, admission). */
     long countByStatusIn(Collection<Integer> statuses);

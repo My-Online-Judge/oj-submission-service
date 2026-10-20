@@ -106,6 +106,8 @@ judge:
   max-queue-depth: ${JUDGE_MAX_QUEUE_DEPTH:500}
 
 oj:
+  identity:
+    base-url: ${OJ_IDENTITY_URI:http://identity-service:8000}
   security:
     jwt:
       # identity-service issues the access tokens and publishes their public key; fetched lazily, on

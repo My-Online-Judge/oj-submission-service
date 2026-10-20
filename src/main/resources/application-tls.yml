@@ -59,6 +59,9 @@ management:
 oj:
   tls:
     allowed-clients: api-gateway,judge-worker
+  identity:
+    base-url: https://identity-service:8000
+    ssl-bundle: oj
   security:
     jwt:
       jwks-uri: https://identity-service:8000/.well-known/jwks.json

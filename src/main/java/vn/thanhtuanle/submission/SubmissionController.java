@@ -1,5 +1,6 @@
 package vn.thanhtuanle.submission;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -7,6 +8,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -14,6 +16,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import vn.thanhtuanle.common.constant.Routes;
 import vn.thanhtuanle.oj.common.web.payload.ApiResponse;
+import vn.thanhtuanle.submission.dto.SubmissionListItemDto;
 import vn.thanhtuanle.submission.dto.SubmissionRequestDto;
 import vn.thanhtuanle.submission.dto.SubmissionResponseDto;
 
@@ -34,13 +37,18 @@ public class SubmissionController {
     }
 
     @GetMapping
-    @Operation(summary = "Get submissions by problem slug (paginated)")
-    public ApiResponse<List<SubmissionResponseDto>> getSubmissionsByProblemSlug(
-            @RequestParam(name = "problem") String problemSlug,
+    @PreAuthorize("hasAuthority('submission:read_any')")
+    @Operation(summary = "Search every submission by problem, user, verdict and date (admin only)")
+    public ApiResponse<List<SubmissionListItemDto>> search(
+            @RequestParam(required = false) String problemSlug,
+            @RequestParam(required = false) String username,
+            @RequestParam(required = false) Integer result,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size) {
-        log.info("Fetching submissions for problem slug: {}", problemSlug);
-        return ApiResponse.success(submissionService.getSubmissionsByProblemSlug(problemSlug, page, size));
+            @RequestParam(defaultValue = "20") int size) {
+        return ApiResponse.success(submissionService.search(
+                new SubmissionSearch(problemSlug, username, result, from, to, page, size)));
     }
 
     @GetMapping("/{id}")

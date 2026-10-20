@@ -107,4 +107,28 @@ public interface SubmissionRepository extends JpaRepository<Submission, UUID> {
     /** The submission with its language loaded, for mapping outside a transaction (VerdictPush). */
     @EntityGraph(attributePaths = "language")
     Optional<Submission> findWithLanguageById(UUID id);
+
+    /** The submissions with their languages loaded (a problem rejudge builds one judge request each). */
+    @EntityGraph(attributePaths = "language")
+    List<Submission> findWithLanguageByIdIn(Collection<UUID> ids);
+
+    /** A problem's finished submissions, newest first: what a problem rejudge takes, a page at most. */
+    @Query("""
+            SELECT s.id FROM Submission s
+            WHERE s.problemSlug = :slug AND s.status NOT IN (6, 7)
+            ORDER BY s.createdAt DESC
+            """)
+    List<UUID> findRejudgeCandidates(@Param("slug") String slug, Pageable page);
+
+    /**
+     * {@link #findRejudgeCandidates} of one verdict. A separate query rather than an optional parameter: Postgres
+     * cannot type a null parameter in {@code :status IS NULL OR s.status = :status}.
+     */
+    @Query("""
+            SELECT s.id FROM Submission s
+            WHERE s.problemSlug = :slug AND s.status NOT IN (6, 7) AND s.status = :status
+            ORDER BY s.createdAt DESC
+            """)
+    List<UUID> findRejudgeCandidatesWithStatus(@Param("slug") String slug, @Param("status") int status,
+                                               Pageable page);
 }

@@ -10,6 +10,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import vn.thanhtuanle.oj.common.security.OjJwtDecoders;
+import vn.thanhtuanle.submission.dto.RejudgeQueued;
 import vn.thanhtuanle.submission.dto.SubmissionResponseDto;
 
 import java.util.UUID;
@@ -21,7 +22,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/** Rejudging is for holders of {@code submission:rejudge} (ADMIN, SYS_ROOT) only. */
+/** Rejudging, one submission or a problem's, is for holders of {@code submission:rejudge} (ADMIN, SYS_ROOT) only. */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -66,5 +67,35 @@ class RejudgeEndpointSecurityTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.id").value(id.toString()))
                 .andExpect(jsonPath("$.data.status").value(6));
+    }
+
+    @Test
+    void anAnonymousProblemRejudgeIs401() throws Exception {
+        mockMvc.perform(post("/api/v1/problems/{slug}/rejudge", "a-plus-b"))
+                .andExpect(status().isUnauthorized());
+
+        verifyNoInteractions(rejudgeService);
+    }
+
+    @Test
+    void aUserWithoutThePermissionIs403ForAProblemRejudge() throws Exception {
+        mockMvc.perform(post("/api/v1/problems/{slug}/rejudge", "a-plus-b").with(userWith("submission:read_any")))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(rejudgeService);
+    }
+
+    @Test
+    void aUserWithThePermissionRejudgesAProblemOptionallyOfOneVerdict() throws Exception {
+        when(rejudgeService.rejudgeProblem("a-plus-b", -1)).thenReturn(new RejudgeQueued(3));
+        when(rejudgeService.rejudgeProblem("a-plus-b", null)).thenReturn(new RejudgeQueued(7));
+
+        mockMvc.perform(post("/api/v1/problems/{slug}/rejudge", "a-plus-b").param("status", "-1")
+                        .with(userWith("submission:rejudge")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.queued").value(3));
+        mockMvc.perform(post("/api/v1/problems/{slug}/rejudge", "a-plus-b").with(userWith("submission:rejudge")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.queued").value(7));
     }
 }

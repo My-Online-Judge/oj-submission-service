@@ -2,6 +2,8 @@ package vn.thanhtuanle.submission;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionOperations;
 import vn.thanhtuanle.common.enums.SubmissionResult;
@@ -14,12 +16,15 @@ import vn.thanhtuanle.messaging.event.SubmissionRequestedEvent;
 import vn.thanhtuanle.messaging.outbox.OutboxWriter;
 import vn.thanhtuanle.oj.common.web.error.AppException;
 import vn.thanhtuanle.oj.common.web.error.ResourceNotFoundException;
+import vn.thanhtuanle.submission.dto.RejudgeQueued;
 import vn.thanhtuanle.submission.dto.SubmissionResponseDto;
 import vn.thanhtuanle.submission.mapper.SubmissionMapper;
 import vn.thanhtuanle.submission.problem.JudgeSpec;
 import vn.thanhtuanle.submission.problem.ProblemCatalog;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -27,11 +32,15 @@ import java.util.UUID;
  * reserves its queue slot first and gives it back if anything after fails; the judge spec is fetched outside any
  * transaction, and only the reset and its judge request in the outbox are one transaction. The reset is conditional
  * (never over PENDING or JUDGING), so a submission is never queued twice by concurrent rejudges.
+ *
+ * <p>A problem rejudge takes at most {@link #MAX_BATCH} of its newest finished submissions, optionally of one verdict.
  */
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class RejudgeService {
+
+    static final int MAX_BATCH = 500;
 
     private final SubmissionRepository submissionRepository;
     private final JudgeService judgeService;
@@ -68,6 +77,59 @@ public class RejudgeService {
         return submissionRepository.findWithLanguageById(id)
                 .map(submissionMapper::toDto)
                 .orElseThrow(() -> notFound(id));
+    }
+
+    /**
+     * Rejudges the newest {@link #MAX_BATCH} finished submissions of the problem, or of those only the ones with
+     * verdict {@code status}. Returns how many were queued: a candidate that a concurrent rejudge queued meanwhile is
+     * neither counted nor queued again, and its reserved slot is given back.
+     */
+    public RejudgeQueued rejudgeProblem(String slug, Integer status) {
+        if (status != null && !SubmissionResult.isTerminalVerdict(status)) {
+            throw new IllegalArgumentException("status must be a final verdict code");
+        }
+        Pageable newest = PageRequest.of(0, MAX_BATCH);
+        List<UUID> candidates = status == null
+                ? submissionRepository.findRejudgeCandidates(slug, newest)
+                : submissionRepository.findRejudgeCandidatesWithStatus(slug, status, newest);
+        if (candidates.isEmpty()) {
+            return new RejudgeQueued(0);
+        }
+
+        int reserved = candidates.size();
+        admission.admit(reserved);
+        Integer queued;
+        try {
+            JudgeSpec spec = problemCatalog.judgeSpec(slug);
+            queued = transactions.execute(tx -> resetAndQueue(candidates, spec));
+        } catch (RuntimeException | Error e) {
+            admission.release(reserved);
+            throw e;
+        }
+        int count = queued == null ? 0 : queued;
+        if (count < reserved) {
+            admission.release(reserved - count);
+        }
+        log.info("Problem {} rejudge queued {} of {} submission(s)", slug, count, reserved);
+        return new RejudgeQueued(count);
+    }
+
+    /** Resets each candidate still finished, then queues one judge request for each row actually reset. */
+    private int resetAndQueue(List<UUID> candidates, JudgeSpec spec) {
+        LocalDateTime now = LocalDateTime.now();
+        List<UUID> reset = new ArrayList<>();
+        for (UUID id : candidates) {
+            if (submissionRepository.resetForRejudge(id, now) == 1) {
+                reset.add(id);
+            }
+        }
+        if (reset.isEmpty()) {
+            return 0;
+        }
+        for (Submission submission : submissionRepository.findWithLanguageByIdIn(reset)) {
+            queue(submission.getId(), submission.getSourceCode(), spec, submission.getLanguage());
+        }
+        return reset.size();
     }
 
     /** Appends the judge request; the outbox relay sends it once the caller's transaction has committed. */

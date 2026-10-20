@@ -70,6 +70,10 @@ management:
         # (scrape), metrics + health (ops), info. Everything else (env, beans, configprops,
         # loggers, heapdump, threaddump, …) is now unmapped → 404 for everyone, admins included.
         include: health,info,prometheus,metrics
+  metrics:
+    distribution:
+      percentiles-histogram:
+        "[http.server.requests]": true
   endpoint:
     # Defense in depth: even if the allowlist above is ever widened again, the two endpoints
     # that leak the most (a full heap dump / every thread's stack) stay off. 'access: none' is

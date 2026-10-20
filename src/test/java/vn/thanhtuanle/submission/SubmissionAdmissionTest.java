@@ -16,8 +16,9 @@ import static org.mockito.Mockito.when;
 class SubmissionAdmissionTest {
 
     private final SubmissionRepository repo = mock(SubmissionRepository.class);
-    private final OjMetrics metrics = new OjMetrics(new SimpleMeterRegistry(), repo);
-    private final SubmissionAdmission admission = new SubmissionAdmission(metrics, 500);
+    private final SimpleMeterRegistry registry = new SimpleMeterRegistry();
+    private final OjMetrics metrics = new OjMetrics(registry, repo);
+    private final SubmissionAdmission admission = new SubmissionAdmission(metrics, registry, 500);
 
     private void queued(long count) {
         when(repo.countByStatusIn(anyCollection())).thenReturn(count);
@@ -50,6 +51,23 @@ class SubmissionAdmissionTest {
 
         assertThat(catchThrowableOfType(() -> admission.admit(3), RateLimitedException.class)).isNotNull();
         assertThat(metrics.queueDepth()).as("no part of the batch is reserved").isEqualTo(498);
+    }
+
+    @Test
+    void aRefusalIsCounted() {
+        assertThat(refusals()).as("registered at 0").isZero();
+        queued(500);
+
+        assertThat(catchThrowableOfType(() -> admission.admit(1), RateLimitedException.class)).isNotNull();
+        assertThat(refusals()).isEqualTo(1);
+
+        queued(10);
+        admission.admit(1);
+        assertThat(refusals()).as("an admitted call is no refusal").isEqualTo(1);
+    }
+
+    private double refusals() {
+        return registry.get("oj.admission.refused").counter().count();
     }
 
     @Test

@@ -57,7 +57,8 @@ public class SubmissionStartedConsumer {
             int updated = generation == null
                     ? submissionRepository.applyStarted(id, startedAt, now)
                     : submissionRepository.applyStartedOfGeneration(id, startedAt, now, generation);
-            if (updated == 0) {
+            // The row generation costs a query: look it up only when the line is written.
+            if (updated == 0 && log.isDebugEnabled()) {
                 log.debug("Ignoring the start of a finished, unknown or since rejudged submission {} "
                         + "(message generation {}, row generation {})", id, generation,
                         submissionRepository.findRejudgeCountById(id));

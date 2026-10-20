@@ -11,10 +11,11 @@ import java.util.UUID;
 public interface ProblemCatalog {
 
     /**
+     * @param allowInactive true lets an INACTIVE problem be judged (problem editors, rejudges)
      * @throws ProblemNotFoundException           unknown or deleted slug (404)
      * @throws ProblemCatalogUnavailableException problems cannot be reached right now (503)
      */
-    JudgeSpec judgeSpec(String slug);
+    JudgeSpec judgeSpec(String slug, boolean allowInactive);
 
     /**
      * The problem's sample test cases by name; a name that is not in the map is hidden. Deleted problems

@@ -70,7 +70,7 @@ class SubmissionServiceCooldownTest {
         req.setLanguageIdentifier("python3");
         req.setProblemSlug("simple-a-plus-b");
 
-        when(problemCatalog.judgeSpec("simple-a-plus-b"))
+        when(problemCatalog.judgeSpec("simple-a-plus-b", false))
                 .thenReturn(new JudgeSpec(UUID.randomUUID(), "simple-a-plus-b", 1000, 256L, "abc123def456"));
         when(languageRepository.findByIdentifier("python3")).thenReturn(Optional.of(new Language()));
         when(currentUser.id()).thenReturn(userId);
@@ -92,7 +92,7 @@ class SubmissionServiceCooldownTest {
 
     @Test
     void unknownProblem_doesNotBurnTheCooldown() {
-        when(problemCatalog.judgeSpec("simple-a-plus-b")).thenThrow(new ProblemNotFoundException());
+        when(problemCatalog.judgeSpec("simple-a-plus-b", false)).thenThrow(new ProblemNotFoundException());
         assertThatThrownBy(() -> service.submit(req)).isInstanceOf(ResourceNotFoundException.class);
         verify(submissionRateLimiter, never()).acquire(any());
     }
@@ -100,7 +100,7 @@ class SubmissionServiceCooldownTest {
     @Test
     void aProblemThatCannotBeJudgedDoesNotBurnTheCooldown() {
         // Before 2a the bundle version was read after the cooldown: a missing bundle cost the user a turn.
-        when(problemCatalog.judgeSpec("simple-a-plus-b"))
+        when(problemCatalog.judgeSpec("simple-a-plus-b", false))
                 .thenThrow(new IllegalStateException("No published test-case bundle"));
         assertThatThrownBy(() -> service.submit(req)).isInstanceOf(IllegalStateException.class);
         verify(submissionRateLimiter, never()).acquire(any());
@@ -108,7 +108,7 @@ class SubmissionServiceCooldownTest {
 
     @Test
     void problemsUnavailable_doesNotBurnTheCooldown() {
-        when(problemCatalog.judgeSpec("simple-a-plus-b")).thenThrow(new ProblemCatalogUnavailableException());
+        when(problemCatalog.judgeSpec("simple-a-plus-b", false)).thenThrow(new ProblemCatalogUnavailableException());
         assertThatThrownBy(() -> service.submit(req)).isInstanceOf(ProblemCatalogUnavailableException.class);
         verify(submissionRateLimiter, never()).acquire(any());
     }

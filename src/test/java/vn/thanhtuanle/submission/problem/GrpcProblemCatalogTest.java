@@ -76,7 +76,7 @@ class GrpcProblemCatalogTest {
                 breaker, Retry.of("problem-service", ProblemServiceResilience.retryConfig()), Duration.ofSeconds(2),
                 new ChannelRecovery(new StateDrivenChannel(ConnectivityState.TRANSIENT_FAILURE)));
 
-        assertThatThrownBy(() -> catalog.judgeSpec("a-plus-b")).isInstanceOf(ProblemCatalogUnavailableException.class);
+        assertThatThrownBy(() -> catalog.judgeSpec("a-plus-b", false)).isInstanceOf(ProblemCatalogUnavailableException.class);
         assertThat(problems.calls).hasValue(0);
         assertThat(breaker.getMetrics().getNumberOfFailedCalls()).isGreaterThanOrEqualTo(1);
     }
@@ -90,9 +90,24 @@ class GrpcProblemCatalogTest {
         problems.answer(JudgeSpec.newBuilder().setProblemId(PROBLEM_ID.toString()).setProblemSlug("a-plus-b")
                 .setTimeLimitMs(1000).setMemoryLimitMb(256).setTestCaseVersion("f7837fd99ca5").build());
 
-        assertThat(catalog().judgeSpec("a-plus-b"))
+        assertThat(catalog().judgeSpec("a-plus-b", false))
                 .isEqualTo(new vn.thanhtuanle.submission.problem.JudgeSpec(PROBLEM_ID, "a-plus-b", 1000, 256L, "f7837fd99ca5"));
         assertThat(problems.lastSlug).isEqualTo("a-plus-b");
+    }
+
+    @Test
+    void allowInactiveRidesOnTheRequest() {
+        problems.answer(JudgeSpec.newBuilder().setProblemId(PROBLEM_ID.toString()).setProblemSlug("a-plus-b")
+                .setTimeLimitMs(1000).setMemoryLimitMb(256).setTestCaseVersion("v").build());
+        problems.answer(JudgeSpec.newBuilder().setProblemId(PROBLEM_ID.toString()).setProblemSlug("a-plus-b")
+                .setTimeLimitMs(1000).setMemoryLimitMb(256).setTestCaseVersion("v").build());
+        GrpcProblemCatalog catalog = catalog();
+
+        catalog.judgeSpec("a-plus-b", true);
+        assertThat(problems.lastAllowInactive).isTrue();
+
+        catalog.judgeSpec("a-plus-b", false);
+        assertThat(problems.lastAllowInactive).isFalse();
     }
 
     @Test
@@ -100,7 +115,7 @@ class GrpcProblemCatalogTest {
         GrpcProblemCatalog catalog = catalog();
         for (int i = 0; i < 25; i++) {
             problems.fail(Status.NOT_FOUND);
-            assertThatThrownBy(() -> catalog.judgeSpec("no-such")).isInstanceOf(ProblemNotFoundException.class);
+            assertThatThrownBy(() -> catalog.judgeSpec("no-such", false)).isInstanceOf(ProblemNotFoundException.class);
         }
         assertThat(problems.calls.get()).isEqualTo(25);   // not retried
         assertThat(breaker.getState()).isEqualTo(CircuitBreaker.State.CLOSED);
@@ -111,7 +126,7 @@ class GrpcProblemCatalogTest {
         GrpcProblemCatalog catalog = catalog();
         for (int i = 0; i < 25; i++) {
             problems.fail(Status.FAILED_PRECONDITION);
-            assertThatThrownBy(() -> catalog.judgeSpec("a-plus-b")).isInstanceOf(ProblemNotJudgeableException.class);
+            assertThatThrownBy(() -> catalog.judgeSpec("a-plus-b", false)).isInstanceOf(ProblemNotJudgeableException.class);
         }
         assertThat(breaker.getState()).isEqualTo(CircuitBreaker.State.CLOSED);
     }
@@ -120,7 +135,7 @@ class GrpcProblemCatalogTest {
     void unavailableIsRetriedTwiceThenIs503() {
         problems.fail(Status.UNAVAILABLE, Status.UNAVAILABLE, Status.UNAVAILABLE);
 
-        assertThatThrownBy(() -> catalog().judgeSpec("a-plus-b")).isInstanceOf(ProblemCatalogUnavailableException.class);
+        assertThatThrownBy(() -> catalog().judgeSpec("a-plus-b", false)).isInstanceOf(ProblemCatalogUnavailableException.class);
         assertThat(problems.calls.get()).isEqualTo(3);
     }
 
@@ -130,7 +145,7 @@ class GrpcProblemCatalogTest {
         problems.answer(JudgeSpec.newBuilder().setProblemId(PROBLEM_ID.toString()).setProblemSlug("a-plus-b")
                 .setTestCaseVersion("v").build());
 
-        assertThat(catalog().judgeSpec("a-plus-b").testCaseVersion()).isEqualTo("v");
+        assertThat(catalog().judgeSpec("a-plus-b", false).testCaseVersion()).isEqualTo("v");
         assertThat(problems.calls.get()).isEqualTo(2);
     }
 
@@ -139,7 +154,7 @@ class GrpcProblemCatalogTest {
         problems.delayMillis = 1_000;
         problems.answer(JudgeSpec.newBuilder().setProblemId(PROBLEM_ID.toString()).build());
 
-        assertThatThrownBy(() -> catalog(Duration.ofMillis(100)).judgeSpec("a-plus-b"))
+        assertThatThrownBy(() -> catalog(Duration.ofMillis(100)).judgeSpec("a-plus-b", false))
                 .isInstanceOf(ProblemCatalogUnavailableException.class);
         assertThat(problems.calls.get()).isEqualTo(1);
     }
@@ -149,12 +164,12 @@ class GrpcProblemCatalogTest {
         GrpcProblemCatalog catalog = catalog();
         for (int i = 0; i < 4; i++) {   // 4 calls x 3 attempts = 12 recorded failures >= the minimum of 10
             problems.fail(Status.UNAVAILABLE, Status.UNAVAILABLE, Status.UNAVAILABLE);
-            assertThatThrownBy(() -> catalog.judgeSpec("a-plus-b")).isInstanceOf(ProblemCatalogUnavailableException.class);
+            assertThatThrownBy(() -> catalog.judgeSpec("a-plus-b", false)).isInstanceOf(ProblemCatalogUnavailableException.class);
         }
         assertThat(breaker.getState()).isEqualTo(CircuitBreaker.State.OPEN);
         int callsBefore = problems.calls.get();
 
-        assertThatThrownBy(() -> catalog.judgeSpec("a-plus-b")).isInstanceOf(ProblemCatalogUnavailableException.class);
+        assertThatThrownBy(() -> catalog.judgeSpec("a-plus-b", false)).isInstanceOf(ProblemCatalogUnavailableException.class);
         assertThat(catalog.sampleCases(PROBLEM_ID)).isEmpty();
         assertThat(problems.calls.get()).isEqualTo(callsBefore);
     }
@@ -168,7 +183,7 @@ class GrpcProblemCatalogTest {
         GrpcProblemCatalog catalog = catalog();
         for (int i = 0; i < 3; i++) {
             problems.answer(JudgeSpec.newBuilder().setProblemId(PROBLEM_ID.toString()).setTestCaseVersion("v").build());
-            catalog.judgeSpec("a-plus-b");
+            catalog.judgeSpec("a-plus-b", false);
         }
 
         assertThat(breaker.getState()).isEqualTo(CircuitBreaker.State.CLOSED);
@@ -201,7 +216,7 @@ class GrpcProblemCatalogTest {
                 breaker, Retry.of("problem-service", ProblemServiceResilience.retryConfig()), Duration.ofSeconds(2),
                 new ChannelRecovery(channel));
 
-        assertThatThrownBy(() -> wrongToken.judgeSpec("a-plus-b")).isInstanceOf(ProblemCatalogUnavailableException.class);
+        assertThatThrownBy(() -> wrongToken.judgeSpec("a-plus-b", false)).isInstanceOf(ProblemCatalogUnavailableException.class);
     }
 
     /** Answers from a queue: a Status fails the call, a message answers it. */
@@ -210,6 +225,7 @@ class GrpcProblemCatalogTest {
         final AtomicInteger calls = new AtomicInteger();
         volatile long delayMillis;
         volatile String lastSlug;
+        volatile boolean lastAllowInactive;
         volatile String lastProblemId;
 
         void fail(Status... statuses) {
@@ -223,6 +239,7 @@ class GrpcProblemCatalogTest {
         @Override
         public void getJudgeSpec(GetJudgeSpecRequest request, StreamObserver<JudgeSpec> observer) {
             lastSlug = request.getProblemSlug();
+            lastAllowInactive = request.getAllowInactive();
             reply(observer);
         }
 

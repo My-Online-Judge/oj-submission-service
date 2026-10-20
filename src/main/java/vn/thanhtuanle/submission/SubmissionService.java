@@ -8,6 +8,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -70,7 +71,7 @@ public class SubmissionService {
         try {
             // Resolved first — limits and the bundle version included — so neither an unknown problem nor one
             // that cannot be judged burns the cooldown below.
-            JudgeSpec spec = problemCatalog.judgeSpec(req.getProblemSlug());
+            JudgeSpec spec = problemCatalog.judgeSpec(req.getProblemSlug(), mayEditProblems());
             Language language = languageRepository.findByIdentifier(req.getLanguageIdentifier())
                     .filter(l -> !l.isDisabled())
                     .orElseThrow(() -> new ResourceNotFoundException("Language not found"));
@@ -229,6 +230,13 @@ public class SubmissionService {
         }
         log.warn("User {} denied access to submission {}", current, id);
         throw new ResourceNotFoundException("Submission not found with id: " + id);
+    }
+
+    /** Holders of problem:update may try out a problem that is still INACTIVE. */
+    private boolean mayEditProblems() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        return auth != null && auth.getAuthorities().stream()
+                .anyMatch(a -> Permissions.PROBLEM_UPDATE.equals(a.getAuthority()));
     }
 
     private boolean hasReadAnyAuthority() {

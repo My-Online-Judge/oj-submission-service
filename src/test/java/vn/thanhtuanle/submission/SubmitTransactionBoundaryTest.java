@@ -64,7 +64,7 @@ class SubmitTransactionBoundaryTest extends PostgresTest {
     @Test
     void noTransactionIsOpenDuringTheGrpcAndRedisCalls() {
         List<Boolean> seen = new ArrayList<>();
-        when(problemCatalog.judgeSpec("a-plus-b")).thenAnswer(inv -> {
+        when(problemCatalog.judgeSpec("a-plus-b", false)).thenAnswer(inv -> {
             seen.add(TransactionSynchronizationManager.isActualTransactionActive());
             return new JudgeSpec(UUID.randomUUID(), "a-plus-b", 1000, 256L, "abc123def456");
         });

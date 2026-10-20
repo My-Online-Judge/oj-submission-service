@@ -59,7 +59,7 @@ public class RejudgeService {
 
         admission.admit(1);
         try {
-            JudgeSpec spec = problemCatalog.judgeSpec(submission.getProblemSlug());
+            JudgeSpec spec = problemCatalog.judgeSpec(submission.getProblemSlug(), true);
             String sourceCode = submission.getSourceCode();
             Language language = submission.getLanguage();
             transactions.executeWithoutResult(status -> {
@@ -100,7 +100,7 @@ public class RejudgeService {
         admission.admit(reserved);
         Integer queued;
         try {
-            JudgeSpec spec = problemCatalog.judgeSpec(slug);
+            JudgeSpec spec = problemCatalog.judgeSpec(slug, true);
             queued = transactions.execute(tx -> resetAndQueue(candidates, spec));
         } catch (RuntimeException | Error e) {
             admission.release(reserved);

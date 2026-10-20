@@ -123,7 +123,7 @@ class ProblemChannelTlsConfigTest {
 
     @Test
     void callsPresentTheServiceCertificateAndNoToken() {
-        JudgeSpec spec = problemCatalog.judgeSpec("two-sum");
+        JudgeSpec spec = problemCatalog.judgeSpec("two-sum", false);
 
         assertThat(spec.problemSlug()).isEqualTo("two-sum");
         assertThat(calls).containsExactly("CN=submission-service token=false");

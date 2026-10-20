@@ -141,7 +141,7 @@ class ProblemRejudgeTest extends PostgresTest {
         // 502 finished, then the two newest still pending.
         List<UUID> ids = insert(concat(repeat(AC, 251), repeat(WA, 251), repeat(PENDING, 2)));
         List<Boolean> inTransaction = new ArrayList<>();
-        when(problemCatalog.judgeSpec(slug)).thenAnswer(call -> {
+        when(problemCatalog.judgeSpec(slug, true)).thenAnswer(call -> {
             inTransaction.add(TransactionSynchronizationManager.isActualTransactionActive());
             return currentSpec();
         });
@@ -161,7 +161,7 @@ class ProblemRejudgeTest extends PostgresTest {
                 + "WHERE message_key = ?", String.class, ids.get(300).toString());
         assertThat(objectMapper.readTree(payload).get("test_case_id").asText()).isEqualTo(slug + "__newhash123");
         assertThat(inTransaction).as("the problems call holds no transaction").containsExactly(false);
-        verify(problemCatalog).judgeSpec(slug);
+        verify(problemCatalog).judgeSpec(slug, true);
         verify(admission).admit(500);
         verify(admission, never()).release(anyInt());
     }
@@ -169,7 +169,7 @@ class ProblemRejudgeTest extends PostgresTest {
     @Test
     void theStatusFilterPicksOneResultCode() {
         List<UUID> ids = insert(AC, WA, TLE, WA, PENDING, AC);
-        when(problemCatalog.judgeSpec(slug)).thenReturn(currentSpec());
+        when(problemCatalog.judgeSpec(slug, true)).thenReturn(currentSpec());
 
         RejudgeQueued result = rejudgeService.rejudgeProblem(slug, WA);
 
@@ -229,7 +229,7 @@ class ProblemRejudgeTest extends PostgresTest {
     @Test
     void aDeletedProblemIs404() {
         List<UUID> ids = insert(AC, WA, TLE);
-        when(problemCatalog.judgeSpec(slug)).thenThrow(new ProblemNotFoundException());
+        when(problemCatalog.judgeSpec(slug, true)).thenThrow(new ProblemNotFoundException());
 
         assertThatThrownBy(() -> rejudgeService.rejudgeProblem(slug, null))
                 .isInstanceOf(ProblemNotFoundException.class);
@@ -245,7 +245,7 @@ class ProblemRejudgeTest extends PostgresTest {
     void aRowRequeuedMeanwhileIsNeitherCountedNorQueuedTwice() {
         List<UUID> ids = insert(AC, WA, TLE);
         // A single rejudge of the middle row lands between the candidate query and this batch's reset.
-        when(problemCatalog.judgeSpec(slug)).thenAnswer(call -> {
+        when(problemCatalog.judgeSpec(slug, true)).thenAnswer(call -> {
             jdbc.update("UPDATE t_submissions SET status = 7 WHERE id = ?", ids.get(1));
             return currentSpec();
         });

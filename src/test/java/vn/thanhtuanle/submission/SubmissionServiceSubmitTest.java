@@ -35,6 +35,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -57,6 +58,37 @@ class SubmissionServiceSubmitTest {
 
     @InjectMocks SubmissionService submissionService;
 
+    @org.junit.jupiter.api.AfterEach
+    void clearAuthentication() {
+        org.springframework.security.core.context.SecurityContextHolder.clearContext();
+    }
+
+    private void signInWith(String... authorities) {
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
+                new org.springframework.security.authentication.TestingAuthenticationToken("u", "p", authorities));
+    }
+
+    private void submitTo(String slug) {
+        when(problemCatalog.judgeSpec(eq(slug), anyBoolean())).thenThrow(new ProblemNotFoundException());
+        assertThatThrownBy(() -> submissionService.submit(SubmissionRequestDto.builder()
+                .sourceCode("int main(){}").languageIdentifier("cpp").problemSlug(slug).build()))
+                .isInstanceOf(ProblemNotFoundException.class);
+    }
+
+    @Test
+    void problemEditorsMayJudgeInactiveProblems() {
+        signInWith("problem:update");
+        submitTo("hidden");
+        verify(problemCatalog).judgeSpec("hidden", true);
+    }
+
+    @Test
+    void ordinaryUsersCannot() {
+        signInWith("submission:read-any", "problem:read");
+        submitTo("hidden");
+        verify(problemCatalog).judgeSpec("hidden", false);
+    }
+
     @Test
     void submit_savesPending_queuesTheJudgeRequestInTheOutbox_andReturnsPending() {
         SubmissionRequestDto req = SubmissionRequestDto.builder()
@@ -67,7 +99,7 @@ class SubmissionServiceSubmitTest {
         Language language = new Language();
         UUID userId = UUID.randomUUID();
 
-        when(problemCatalog.judgeSpec("a-plus-b")).thenReturn(spec);
+        when(problemCatalog.judgeSpec("a-plus-b", false)).thenReturn(spec);
         when(languageRepository.findByIdentifier("cpp")).thenReturn(Optional.of(language));
         when(currentUser.id()).thenReturn(userId);
         // simulate JPA's GenerationType.UUID assigning an id on save(), since a bare Mockito
@@ -129,7 +161,7 @@ class SubmissionServiceSubmitTest {
     @Test
     void aRefusalAfterTheReservationGivesTheSlotBack() {
         // A 404 burns no cooldown, so without the release a stream of them could fill the queue for 5 s.
-        when(problemCatalog.judgeSpec("no-such-problem")).thenThrow(new ProblemNotFoundException());
+        when(problemCatalog.judgeSpec("no-such-problem", false)).thenThrow(new ProblemNotFoundException());
 
         assertThatThrownBy(() -> submissionService.submit(SubmissionRequestDto.builder()
                 .sourceCode("int main(){}").languageIdentifier("cpp").problemSlug("no-such-problem").build()))
@@ -148,7 +180,7 @@ class SubmissionServiceSubmitTest {
         Language disabled = new Language();
         disabled.setDisabled(true);
 
-        when(problemCatalog.judgeSpec("a-plus-b"))
+        when(problemCatalog.judgeSpec("a-plus-b", false))
                 .thenReturn(new JudgeSpec(UUID.randomUUID(), "a-plus-b", 1000, 256L, "abc123def456"));
         when(languageRepository.findByIdentifier("javascript")).thenReturn(Optional.of(disabled));
 
@@ -161,7 +193,7 @@ class SubmissionServiceSubmitTest {
         TransactionOperations mockTransactions = mock(TransactionOperations.class);
         ReflectionTestUtils.setField(submissionService, "transactions", mockTransactions);
         UUID userId = UUID.randomUUID();
-        when(problemCatalog.judgeSpec("a-plus-b"))
+        when(problemCatalog.judgeSpec("a-plus-b", false))
                 .thenReturn(new JudgeSpec(UUID.randomUUID(), "a-plus-b", 1000, 256L, "abc123def456"));
         when(languageRepository.findByIdentifier("cpp")).thenReturn(Optional.of(new Language()));
         when(currentUser.id()).thenReturn(userId);

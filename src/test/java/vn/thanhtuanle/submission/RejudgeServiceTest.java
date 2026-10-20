@@ -97,7 +97,7 @@ class RejudgeServiceTest extends PostgresTest {
     void aFinishedSubmissionIsResetAndQueuedWithTheCurrentSpec() throws Exception {
         UUID id = insertSubmission(0);
         List<Boolean> inTransaction = new ArrayList<>();
-        when(problemCatalog.judgeSpec(slug)).thenAnswer(call -> {
+        when(problemCatalog.judgeSpec(slug, true)).thenAnswer(call -> {
             inTransaction.add(TransactionSynchronizationManager.isActualTransactionActive());
             return currentSpec();
         });
@@ -172,10 +172,21 @@ class RejudgeServiceTest extends PostgresTest {
     }
 
     @Test
+    void aRejudgeMayJudgeAnInactiveProblem() {
+        UUID id = insertSubmission(0);
+        when(problemCatalog.judgeSpec(slug, true)).thenReturn(currentSpec());
+
+        rejudgeService.rejudge(id);
+
+        verify(problemCatalog).judgeSpec(slug, true);
+        verify(problemCatalog, never()).judgeSpec(slug, false);
+    }
+
+    @Test
     void aDeletedProblemIs404AndGivesTheSlotBack() {
         UUID id = insertSubmission(0);
         Map<String, Object> before = row(id);
-        when(problemCatalog.judgeSpec(slug)).thenThrow(new ProblemNotFoundException());
+        when(problemCatalog.judgeSpec(slug, true)).thenThrow(new ProblemNotFoundException());
 
         assertThatThrownBy(() -> rejudgeService.rejudge(id)).isInstanceOf(ProblemNotFoundException.class);
 
@@ -189,7 +200,7 @@ class RejudgeServiceTest extends PostgresTest {
     void aSubmissionRequeuedMeanwhileIs409AndGivesTheSlotBack() {
         UUID id = insertSubmission(0);
         // Another rejudge resets the row between the status check and this one's reset.
-        when(problemCatalog.judgeSpec(slug)).thenAnswer(call -> {
+        when(problemCatalog.judgeSpec(slug, true)).thenAnswer(call -> {
             jdbc.update("UPDATE t_submissions SET status = 6, rejudge_count = 1 WHERE id = ?", id);
             return currentSpec();
         });

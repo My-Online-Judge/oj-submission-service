@@ -40,8 +40,9 @@ public class GrpcProblemCatalog implements ProblemCatalog {
     }
 
     @Override
-    public JudgeSpec judgeSpec(String slug) {
-        GetJudgeSpecRequest request = GetJudgeSpecRequest.newBuilder().setProblemSlug(slug).build();
+    public JudgeSpec judgeSpec(String slug, boolean allowInactive) {
+        GetJudgeSpecRequest request = GetJudgeSpecRequest.newBuilder().setProblemSlug(slug)
+                .setAllowInactive(allowInactive).build();
         try {
             var spec = call(() -> withDeadline().getJudgeSpec(request));
             return new JudgeSpec(UUID.fromString(spec.getProblemId()), spec.getProblemSlug(), spec.getTimeLimitMs(),

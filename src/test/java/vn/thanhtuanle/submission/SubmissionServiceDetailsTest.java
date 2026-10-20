@@ -41,7 +41,7 @@ class SubmissionServiceDetailsTest {
         UUID ownerId = UUID.randomUUID();
         Submission s = Submission.builder().problemId(UUID.randomUUID()).userId(ownerId).build();
         s.setId(id);
-        when(submissionRepository.findById(id)).thenReturn(Optional.of(s));
+        when(submissionRepository.findWithLanguageById(id)).thenReturn(Optional.of(s));
         when(currentUser.id()).thenReturn(ownerId);
 
         List<TestCaseResultDto> rows = List.of(

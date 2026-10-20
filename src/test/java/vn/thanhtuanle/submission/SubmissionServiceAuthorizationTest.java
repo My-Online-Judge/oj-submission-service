@@ -52,7 +52,7 @@ class SubmissionServiceAuthorizationTest {
         UUID subId = UUID.randomUUID();
         Submission s = ownedBy(subId, ownerId);
 
-        when(submissionRepository.findById(subId)).thenReturn(Optional.of(s));
+        when(submissionRepository.findWithLanguageById(subId)).thenReturn(Optional.of(s));
         when(currentUser.id()).thenReturn(ownerId);
         when(submissionMapper.toDto(eq(s), any()))
                 .thenReturn(SubmissionResponseDto.builder().build());
@@ -65,7 +65,7 @@ class SubmissionServiceAuthorizationTest {
         UUID subId = UUID.randomUUID();
         Submission s = ownedBy(subId, UUID.randomUUID());
 
-        when(submissionRepository.findById(subId)).thenReturn(Optional.of(s));
+        when(submissionRepository.findWithLanguageById(subId)).thenReturn(Optional.of(s));
         when(currentUser.id()).thenReturn(UUID.randomUUID());
 
         assertThatThrownBy(() -> service.getSubmissionById(subId.toString()))

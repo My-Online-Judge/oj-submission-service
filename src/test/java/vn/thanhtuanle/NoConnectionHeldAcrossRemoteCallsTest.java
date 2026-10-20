@@ -19,6 +19,7 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import vn.thanhtuanle.common.enums.SubmissionResult;
 import vn.thanhtuanle.entity.Language;
 import vn.thanhtuanle.entity.Submission;
+import vn.thanhtuanle.judge.dto.JudgeResultDto;
 import vn.thanhtuanle.language.LanguageRepository;
 import vn.thanhtuanle.oj.common.identity.PublicUser;
 import vn.thanhtuanle.oj.common.identity.PublicUserClient;
@@ -102,10 +103,28 @@ class NoConnectionHeldAcrossRemoteCallsTest extends PostgresTest {
     }
 
     private UUID add(int status) {
+        return add(status, null);
+    }
+
+    private UUID add(int status, List<JudgeResultDto> details) {
         UUID id = submissions.save(Submission.builder().sourceCode("int main(){}").status(status).time(0).memory(1L)
-                .problemId(UUID.randomUUID()).problemSlug(slug).language(language).userId(user).build()).getId();
+                .problemId(UUID.randomUUID()).problemSlug(slug).language(language).userId(user).details(details)
+                .build()).getId();
         created.add(id);
         return id;
+    }
+
+    /** An accepted submission with one judged test case: showing it asks problem-service which cases are samples. */
+    private UUID addJudged() {
+        return add(SubmissionResult.ACCEPTED.getValue(),
+                List.of(JudgeResultDto.builder().testCase("1").result(0).cpuTime(1).memory(1L).build()));
+    }
+
+    private void probeSampleCases() {
+        when(catalog.sampleCases(any())).thenAnswer(inv -> {
+            probe();
+            return Map.of();
+        });
     }
 
     private RequestPostProcessor signedIn(String... authorities) {
@@ -176,8 +195,35 @@ class NoConnectionHeldAcrossRemoteCallsTest extends PostgresTest {
                 .containsExactly(0, 0);
     }
 
+    @Test
+    void aJudgedSubmissionHoldsNoConnectionWhileAskingForItsSampleCases() throws Exception {
+        UUID id = addJudged();
+        probeSampleCases();
+
+        mockMvc.perform(get("/api/v1/submissions/{id}", id).with(signedIn()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.details[0].name").value("1"));
+
+        assertThat(activeAtCalls).as("active connections during GetSampleTestCases").containsExactly(0);
+    }
+
+    /** A stream opened after the verdict replays it at once, asking for the sample cases after the reads. */
+    @Test
+    void aStreamThatReplaysAVerdictHoldsNoConnectionWhileAskingForItsSampleCases() throws Exception {
+        UUID id = addJudged();
+        probeSampleCases();
+
+        MvcResult stream = mockMvc.perform(get("/api/v1/submissions/{id}/stream", id).with(signedIn()))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+        mockMvc.perform(asyncDispatch(stream)).andExpect(status().isOk());
+
+        assertThat(stream.getResponse().getContentAsString()).contains("event:verdict").contains("\"name\":\"1\"");
+        assertThat(activeAtCalls).as("active connections during GetSampleTestCases").containsExactly(0);
+    }
+
     /**
-     * A verdict stream stays open up to 5 minutes. The submission is read and authorized in a short transaction before
+     * A verdict stream stays open up to 5 minutes. The submission is read and authorized in a short read before
      * the emitter is returned, and nothing is held while it waits for the verdict.
      */
     @Test

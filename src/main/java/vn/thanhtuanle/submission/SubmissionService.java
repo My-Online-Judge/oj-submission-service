@@ -1,6 +1,5 @@
 package vn.thanhtuanle.submission;
 
-import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
@@ -59,8 +58,6 @@ public class SubmissionService {
     private final OutboxWriter outboxWriter;
     private final SubmissionSseRegistry sseRegistry;
     private final SubmissionDetailAssembler detailAssembler;
-    // Shared transactional EntityManager proxy — used only for refresh() in streamVerdict.
-    private final EntityManager entityManager;
     private final SubmissionRateLimiter submissionRateLimiter;
     private final SubmissionAdmission admission;
     private final CurrentUser currentUser;
@@ -172,16 +169,22 @@ public class SubmissionService {
         }));
     }
 
-    @Transactional(readOnly = true)
+    /**
+     * Not transactional: the row is read with its language in the repository's own short read, and problem-service is
+     * asked for the sample cases after it, so a slow problem-service never holds a database connection.
+     */
     public SubmissionResponseDto getSubmissionById(String id) {
         log.info("Service to get submission by id: {}", id);
-        Submission submission = submissionRepository.findById(UUID.fromString(id))
+        Submission submission = submissionRepository.findWithLanguageById(UUID.fromString(id))
                 .orElseThrow(() -> new ResourceNotFoundException("Submission not found with id: " + id));
         assertCanRead(submission, id);
         return submissionMapper.toDto(submission, detailAssembler.assemble(submission));
     }
 
-    @Transactional(readOnly = true)
+    /**
+     * Not transactional: each read below is the repository's own, and a replay asks problem-service for the sample
+     * cases after the reads, so neither an open stream nor a slow problem-service holds a database connection.
+     */
     public SseEmitter streamVerdict(String id) {
         // Load + authorize BEFORE subscribing: an unknown id must 404 identically to a denied
         // id (no existence oracle), and no emitter may ever be registered for a request that
@@ -196,21 +199,22 @@ public class SubmissionService {
         // Now that the caller is authorized, register the emitter. The verdict may have landed
         // in the window between the read above and subscribe(): if the consumer's publish ran
         // before the emitter existed, the replay decision must come from a GENUINELY fresh
-        // read. A second findById would not be one — within this persistence context it returns
-        // the already-managed (stale) instance without touching the database. The scalar status
-        // query below always hits the database (see the warning on findStatusById), so it sees
-        // the committed verdict; refresh() then forces a DB re-read into the managed instance
-        // so the replay payload matches. Together with writers publishing only AFTER their
-        // commit (VerdictPubSub.publishAfterCommit), this closes the race completely: a
-        // subscriber either registers before the post-commit publish (receives it live) or
-        // re-reads after the commit (sees terminal here and replays).
+        // read. The scalar status query below always hits the database (see the warning on
+        // findStatusById), so it sees the committed verdict. The replay payload is then a read
+        // of its own: no transaction spans this method (and open-in-view is off), so it shares
+        // no persistence context with the read above and returns the committed row, with its
+        // language for mapping. Together with writers publishing only AFTER their commit
+        // (VerdictPubSub.publishAfterCommit), this closes the race completely: a subscriber
+        // either registers before the post-commit publish (receives it live) or re-reads after
+        // the commit (sees terminal here and replays).
         SseEmitter emitter = sseRegistry.subscribe(id);
         Integer freshStatus = submissionRepository.findStatusById(submissionId);
         if (freshStatus != null && SubmissionResult.isTerminal(freshStatus)) {
-            entityManager.refresh(submission);
-            log.info("Submission {} already terminal (status={}) at subscribe, replaying verdict",
-                    id, submission.getStatus());
-            sseRegistry.complete(id, submissionMapper.toDto(submission, detailAssembler.assemble(submission)));
+            submissionRepository.findWithLanguageById(submissionId).ifPresent(replay -> {
+                log.info("Submission {} already terminal (status={}) at subscribe, replaying verdict",
+                        id, replay.getStatus());
+                sseRegistry.complete(id, submissionMapper.toDto(replay, detailAssembler.assemble(replay)));
+            });
         }
         // Null (row gone) or non-terminal: no replay — the live post-commit publish or the
         // registry timeout takes it from here.

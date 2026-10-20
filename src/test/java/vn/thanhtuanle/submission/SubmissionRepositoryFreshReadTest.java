@@ -21,16 +21,18 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Pins the Hibernate first-level-cache semantics that make the scalar
- * {@link SubmissionRepository#findStatusById} load-bearing in
- * {@code SubmissionService.streamVerdict} — semantics a Mockito test cannot express:
+ * Pins the Hibernate first-level-cache semantics that {@code SubmissionService.streamVerdict}'s
+ * replay relies on — semantics a Mockito test cannot express:
  *
  * Within one open persistence context, a repeated {@code findById} does NOT re-read the
  * database: it returns the already-managed instance, so a status committed by another
  * transaction in the meantime is invisible to it. A JPQL scalar select, by contrast,
  * always hits the database and returns the committed value directly, bypassing the
- * persistence context. {@code EntityManager.refresh} then forces a DB re-read into the
- * managed instance. This is exactly the sequence streamVerdict relies on.
+ * persistence context, which is why streamVerdict decides on
+ * {@link SubmissionRepository#findStatusById}. Outside a transaction, though, every
+ * repository read has a persistence context of its own, so an entity read made after
+ * another transaction's commit sees it: streamVerdict, which no transaction spans, replays
+ * such a read.
  */
 @SpringBootTest
 @ActiveProfiles("test")
@@ -75,7 +77,7 @@ class SubmissionRepositoryFreshReadTest {
 
     @Test
     void scalarStatusQuerySeesCommittedUpdate_whileFindByIdServesStaleManagedInstance() {
-        // Reader transaction mirrors streamVerdict's @Transactional(readOnly = true).
+        // One reader transaction: what streamVerdict would see if a transaction spanned it.
         TransactionTemplate readerTx = new TransactionTemplate(transactionManager);
         readerTx.setReadOnly(true);
 
@@ -112,5 +114,21 @@ class SubmissionRepositoryFreshReadTest {
             entityManager.refresh(managed);
             assertThat(managed.getStatus()).isEqualTo(SubmissionResult.ACCEPTED.getValue());
         });
+    }
+
+    @Test
+    void outsideATransactionEachEntityReadSeesTheCommittedRow() {
+        Submission loaded = submissionRepository.findById(submissionId).orElseThrow();
+        assertThat(loaded.getStatus()).isEqualTo(SubmissionResult.PENDING.getValue());
+
+        new TransactionTemplate(transactionManager).executeWithoutResult(tx ->
+                submissionRepository.findById(submissionId).orElseThrow()
+                        .setStatus(SubmissionResult.ACCEPTED.getValue()));
+
+        Submission replay = submissionRepository.findWithLanguageById(submissionId).orElseThrow();
+        assertThat(replay).isNotSameAs(loaded);
+        assertThat(replay.getStatus()).isEqualTo(SubmissionResult.ACCEPTED.getValue());
+        assertThat(replay.getLanguage().getName()).as("loaded with the row, so it maps outside a transaction")
+                .isEqualTo("fresh-read-lang");
     }
 }

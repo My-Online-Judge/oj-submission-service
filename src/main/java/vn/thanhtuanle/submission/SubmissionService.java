@@ -143,7 +143,8 @@ public class SubmissionService {
      * read, never inside a transaction, so a slow identity never holds a database connection.
      */
     public PageResponse<SubmissionListItemDto> search(SubmissionSearch q) {
-        Pageable pageable = PageRequest.of(q.page(), PageSizes.cap(q.size()), Sort.by(Sort.Direction.DESC, "createdAt"));
+        Pageable pageable = PageRequest.of(q.page(), PageSizes.cap(q.size()), Sort.by(Sort.Direction.DESC, "createdAt")
+                .and(Sort.by(Sort.Direction.DESC, "id")));
         UUID userId = null;
         if (q.username() != null && !q.username().isBlank()) {
             try {
@@ -207,14 +208,20 @@ public class SubmissionService {
         // (VerdictPubSub.publishAfterCommit), this closes the race completely: a subscriber
         // either registers before the post-commit publish (receives it live) or re-reads after
         // the commit (sees terminal here and replays).
-        SseEmitter emitter = sseRegistry.subscribe(id);
-        Integer freshStatus = submissionRepository.findStatusById(submissionId);
-        if (freshStatus != null && SubmissionResult.isTerminal(freshStatus)) {
-            submissionRepository.findWithLanguageById(submissionId).ifPresent(replay -> {
-                log.info("Submission {} already terminal (status={}) at subscribe, replaying verdict",
-                        id, replay.getStatus());
-                sseRegistry.complete(id, submissionMapper.toDto(replay, detailAssembler.assemble(replay)));
-            });
+        SseEmitter emitter = sseRegistry.subscribe(id, currentUser.id());
+        try {
+            Integer freshStatus = submissionRepository.findStatusById(submissionId);
+            if (freshStatus != null && SubmissionResult.isTerminal(freshStatus)) {
+                submissionRepository.findWithLanguageById(submissionId).ifPresent(replay -> {
+                    log.info("Submission {} already terminal (status={}) at subscribe, replaying verdict",
+                            id, replay.getStatus());
+                    sseRegistry.complete(id, submissionMapper.toDto(replay, detailAssembler.assemble(replay)));
+                });
+            }
+        } catch (RuntimeException | Error e) {
+            // The handler fails, so Spring never starts the emitter and none of its callbacks fire: free its slot here.
+            sseRegistry.onDone(id, emitter);
+            throw e;
         }
         // Null (row gone) or non-terminal: no replay — the live post-commit publish or the
         // registry timeout takes it from here.

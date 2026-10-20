@@ -15,7 +15,7 @@ final class SubmissionSpecifications {
     static Specification<Submission> matching(String problemSlug, UUID userId, Integer status, LocalDate from,
                                               LocalDate to) {
         return Specification.allOf(
-                problemSlug == null ? null : (Specification<Submission>) (r, q, cb) -> cb.equal(r.get("problemSlug"), problemSlug),
+                problemSlug == null || problemSlug.isBlank() ? null : (Specification<Submission>) (r, q, cb) -> cb.equal(r.get("problemSlug"), problemSlug.trim()),
                 userId == null ? null : (Specification<Submission>) (r, q, cb) -> cb.equal(r.get("userId"), userId),
                 status == null ? null : (Specification<Submission>) (r, q, cb) -> cb.equal(r.get("status"), status),
                 from == null ? null : (Specification<Submission>) (r, q, cb) ->

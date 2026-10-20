@@ -69,7 +69,7 @@ class SubmissionServiceStreamTest {
         when(submissionRepository.findStatusById(id)).thenReturn(SubmissionResult.ACCEPTED.getValue());
         when(submissionRepository.findWithLanguageById(id)).thenReturn(Optional.of(s));
         when(currentUser.id()).thenReturn(ownerId);
-        when(sseRegistry.subscribe(id.toString())).thenReturn(emitter);
+        when(sseRegistry.subscribe(id.toString(), ownerId)).thenReturn(emitter);
         when(submissionMapper.toDto(eq(s), any())).thenReturn(dto);
 
         SseEmitter result = submissionService.streamVerdict(id.toString());
@@ -79,7 +79,7 @@ class SubmissionServiceStreamTest {
         // so a denied/unknown request never registers (and evicts) an emitter.
         InOrder inOrder = inOrder(submissionRepository, sseRegistry, detailAssembler);
         inOrder.verify(submissionRepository).findById(id);
-        inOrder.verify(sseRegistry).subscribe(id.toString());
+        inOrder.verify(sseRegistry).subscribe(id.toString(), ownerId);
         // The replay decision must come from the post-subscribe scalar re-read, and the
         // replayed row from a read of its own after it; the sample cases are asked for last.
         inOrder.verify(submissionRepository).findStatusById(id);
@@ -96,7 +96,7 @@ class SubmissionServiceStreamTest {
         when(submissionRepository.findById(id)).thenReturn(Optional.of(s));
         when(submissionRepository.findStatusById(id)).thenReturn(SubmissionResult.PENDING.getValue());
         when(currentUser.id()).thenReturn(ownerId);
-        when(sseRegistry.subscribe(id.toString())).thenReturn(new SseEmitter());
+        when(sseRegistry.subscribe(id.toString(), ownerId)).thenReturn(new SseEmitter());
 
         submissionService.streamVerdict(id.toString());
 
@@ -113,7 +113,7 @@ class SubmissionServiceStreamTest {
         when(submissionRepository.findById(id)).thenReturn(Optional.of(s));
         when(submissionRepository.findStatusById(id)).thenReturn(SubmissionResult.JUDGING.getValue());
         when(currentUser.id()).thenReturn(ownerId);
-        when(sseRegistry.subscribe(id.toString())).thenReturn(new SseEmitter());
+        when(sseRegistry.subscribe(id.toString(), ownerId)).thenReturn(new SseEmitter());
 
         submissionService.streamVerdict(id.toString());
 
@@ -140,7 +140,7 @@ class SubmissionServiceStreamTest {
         when(submissionRepository.findStatusById(id)).thenReturn(SubmissionResult.ACCEPTED.getValue());
         when(submissionRepository.findWithLanguageById(id)).thenReturn(Optional.of(committed));
         when(currentUser.id()).thenReturn(ownerId);
-        when(sseRegistry.subscribe(id.toString())).thenReturn(new SseEmitter());
+        when(sseRegistry.subscribe(id.toString(), ownerId)).thenReturn(new SseEmitter());
         when(submissionMapper.toDto(same(committed), any())).thenReturn(dto);
 
         submissionService.streamVerdict(id.toString());
@@ -160,7 +160,7 @@ class SubmissionServiceStreamTest {
         when(submissionRepository.findById(id)).thenReturn(Optional.of(s));
         when(submissionRepository.findStatusById(id)).thenReturn(null);
         when(currentUser.id()).thenReturn(ownerId);
-        when(sseRegistry.subscribe(id.toString())).thenReturn(new SseEmitter());
+        when(sseRegistry.subscribe(id.toString(), ownerId)).thenReturn(new SseEmitter());
 
         submissionService.streamVerdict(id.toString());
 
@@ -176,7 +176,7 @@ class SubmissionServiceStreamTest {
         when(submissionRepository.findStatusById(id)).thenReturn(SubmissionResult.ACCEPTED.getValue());
         when(submissionRepository.findWithLanguageById(id)).thenReturn(Optional.empty());
         when(currentUser.id()).thenReturn(ownerId);
-        when(sseRegistry.subscribe(id.toString())).thenReturn(new SseEmitter());
+        when(sseRegistry.subscribe(id.toString(), ownerId)).thenReturn(new SseEmitter());
 
         submissionService.streamVerdict(id.toString());
 
@@ -196,5 +196,52 @@ class SubmissionServiceStreamTest {
                 .isInstanceOf(ResourceNotFoundException.class);
 
         verifyNoInteractions(sseRegistry);
+    }
+
+    @Test
+    void streamVerdict_whenTheReadAfterSubscribingThrows_theEmitterIsRemoved() {
+        UUID id = UUID.randomUUID();
+        UUID ownerId = UUID.randomUUID();
+        SseEmitter emitter = new SseEmitter();
+        when(submissionRepository.findById(id)).thenReturn(Optional.of(submission(id, ownerId, SubmissionResult.PENDING)));
+        when(submissionRepository.findStatusById(id)).thenThrow(new IllegalStateException("db blip"));
+        when(currentUser.id()).thenReturn(ownerId);
+        when(sseRegistry.subscribe(id.toString(), ownerId)).thenReturn(emitter);
+
+        assertThatThrownBy(() -> submissionService.streamVerdict(id.toString()))
+                .isInstanceOf(IllegalStateException.class).hasMessage("db blip");
+
+        verify(sseRegistry).onDone(id.toString(), emitter);
+    }
+
+    @Test
+    void streamVerdict_whenTheReplayReadThrows_theEmitterIsRemoved() {
+        UUID id = UUID.randomUUID();
+        UUID ownerId = UUID.randomUUID();
+        SseEmitter emitter = new SseEmitter();
+        when(submissionRepository.findById(id)).thenReturn(Optional.of(submission(id, ownerId, SubmissionResult.PENDING)));
+        when(submissionRepository.findStatusById(id)).thenReturn(SubmissionResult.ACCEPTED.getValue());
+        when(submissionRepository.findWithLanguageById(id)).thenThrow(new IllegalStateException("db blip"));
+        when(currentUser.id()).thenReturn(ownerId);
+        when(sseRegistry.subscribe(id.toString(), ownerId)).thenReturn(emitter);
+
+        assertThatThrownBy(() -> submissionService.streamVerdict(id.toString()))
+                .isInstanceOf(IllegalStateException.class);
+
+        verify(sseRegistry).onDone(id.toString(), emitter);
+    }
+
+    @Test
+    void streamVerdict_whenTheReadsSucceed_theEmitterStaysRegistered() {
+        UUID id = UUID.randomUUID();
+        UUID ownerId = UUID.randomUUID();
+        when(submissionRepository.findById(id)).thenReturn(Optional.of(submission(id, ownerId, SubmissionResult.PENDING)));
+        when(submissionRepository.findStatusById(id)).thenReturn(SubmissionResult.PENDING.getValue());
+        when(currentUser.id()).thenReturn(ownerId);
+        when(sseRegistry.subscribe(id.toString(), ownerId)).thenReturn(new SseEmitter());
+
+        submissionService.streamVerdict(id.toString());
+
+        verify(sseRegistry, never()).onDone(any(), any());
     }
 }

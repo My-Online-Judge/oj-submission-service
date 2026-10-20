@@ -37,6 +37,9 @@ public class GrpcProblemCatalog implements ProblemCatalog {
     private final Retry retry;
     private final CircuitBreaker visibilityBreaker;
     private final Retry visibilityRetry;
+    /** The start of problem-service's FAILED_PRECONDITION description for a checker problem without its source. */
+    private static final String CHECKER_SOURCE_MISSING = "Checker source missing";
+
     private final Duration deadline;
     private final ChannelRecovery recovery;
 
@@ -78,6 +81,13 @@ public class GrpcProblemCatalog implements ProblemCatalog {
                 case FAILED_PRECONDITION -> {
                     if (ProblemRpcReasons.isContestNotRunning(e)) {
                         throw new AppException(ErrorCode.CONTEST_NOT_RUNNING);
+                    }
+                    String description = e.getStatus().getDescription();
+                    if (description != null && description.startsWith(CHECKER_SOURCE_MISSING)) {
+                        // A fault of the problem's checker, not of its bundle: say so, and answer like any other
+                        // temporary refusal (503) instead of the catch-all 500.
+                        log.error("checker source missing for {}: submits are refused until it is uploaded again", slug);
+                        throw new ProblemCatalogUnavailableException();
                     }
                     throw new ProblemNotJudgeableException(slug);
                 }

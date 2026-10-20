@@ -152,4 +152,31 @@ class SubmissionSearchTest {
         assertThat(page.getData()).hasSize(8);
         assertThat(page.getData()).extracting(SubmissionListItemDto::username).containsOnlyNulls();
     }
+
+    @Test
+    void aBlankProblemSlugIsTreatedAsAbsent() {
+        when(publicUserClient.byUsername("alice")).thenReturn(Optional.of(profile(alice, "alice")));
+        when(publicUserClient.byIds(any())).thenReturn(Map.of(alice, profile(alice, "alice")));
+
+        assertThat(service.search(search("", "alice", null, null, null, 20)).getTotalElements()).isEqualTo(8);
+        assertThat(service.search(search("   ", "alice", null, null, null, 20)).getTotalElements()).isEqualTo(8);
+    }
+
+    @Test
+    void rowsWithTheSameCreatedAtComeInAStableOrderOfIdDescending() {
+        when(publicUserClient.byUsername("alice")).thenReturn(Optional.of(profile(alice, "alice")));
+        when(publicUserClient.byIds(any())).thenReturn(Map.of());
+
+        // alice's two statuses per problem and day share one created_at, so only the id breaks the tie
+        List<UUID> paged = new ArrayList<>();
+        for (int page = 0; page < 2; page++) {
+            paged.addAll(service.search(new SubmissionSearch(p1, "alice", null, null, null, page, 2)).getData()
+                    .stream().map(SubmissionListItemDto::id).toList());
+        }
+        List<UUID> expected = jdbc.queryForList(
+                "select id from t_submissions where user_id = ? and problem_slug = ? "
+                        + "order by created_at desc, id desc", UUID.class, alice, p1);
+        assertThat(expected).hasSize(4);
+        assertThat(paged).containsExactlyElementsOf(expected);
+    }
 }

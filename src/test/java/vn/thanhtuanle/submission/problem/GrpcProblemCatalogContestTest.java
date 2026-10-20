@@ -100,6 +100,27 @@ class GrpcProblemCatalogContestTest {
     }
 
     @Test
+    void aMissingCheckerSourceIs503AndLoggedAsTheCheckerNotTheBundle() {
+        problems.failure = Status.FAILED_PRECONDITION
+                .withDescription("Checker source missing for problem: a-plus-b").asRuntimeException();
+        var logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(GrpcProblemCatalog.class);
+        var appender = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            assertThatThrownBy(() -> catalog.judgeSpec("a-plus-b", false, null))
+                    .isInstanceOf(ProblemCatalogUnavailableException.class);
+        } finally {
+            logger.detachAppender(appender);
+        }
+
+        assertThat(appender.list).extracting(e -> e.getFormattedMessage())
+                .anyMatch(m -> m.contains("checker source missing for a-plus-b"))
+                .noneMatch(m -> m.contains("No test-case bundle"));
+        assertThat(problems.calls).as("an answer, not retried").hasValue(1);
+    }
+
+    @Test
     void emptyContestIdIsNull() {
         problems.answer = spec().build();
 

@@ -18,6 +18,7 @@ import vn.thanhtuanle.common.constant.Permissions;
 import vn.thanhtuanle.common.enums.SubmissionResult;
 import vn.thanhtuanle.oj.common.web.error.ResourceNotFoundException;
 import vn.thanhtuanle.oj.common.web.payload.PageResponse;
+import vn.thanhtuanle.oj.common.web.payload.PageSizes;
 import vn.thanhtuanle.entity.Language;
 import vn.thanhtuanle.entity.Submission;
 import vn.thanhtuanle.judge.JudgeService;
@@ -129,7 +130,7 @@ public class SubmissionService {
     public PageResponse<SubmissionResponseDto> getSubmissionsByProblemSlug(String problemSlug, int page, int size) {
         log.info("Service to get submissions by problem slug: {}", problemSlug);
 
-        Pageable pageable = PageRequest.of(page, size);
+        Pageable pageable = PageRequest.of(page, PageSizes.cap(size));
         return PageResponse.of(submissionRepository
                 .findByProblemSlugOrderByCreatedAtDesc(problemSlug, pageable)
                 .map(submissionMapper::toDto));
@@ -189,7 +190,7 @@ public class SubmissionService {
             throw new ResourceNotFoundException("Submissions not found for user: " + userId);
         }
 
-        Pageable pageable = PageRequest.of(page, size);
+        Pageable pageable = PageRequest.of(page, PageSizes.cap(size));
 
         Page<Submission> submissionPage = submissionRepository.findByUserIdOrderByCreatedAtDesc(UUID.fromString(userId),
                 pageable);
@@ -208,7 +209,7 @@ public class SubmissionService {
             throw new ResourceNotFoundException("Submissions not found for user: " + userId);
         }
 
-        Pageable pageable = PageRequest.of(page, size);
+        Pageable pageable = PageRequest.of(page, PageSizes.cap(size));
 
         Page<Submission> submissionPage = submissionRepository
                 .findByUserIdAndProblemSlugOrderByCreatedAtDesc(UUID.fromString(userId), problemSlug, pageable);

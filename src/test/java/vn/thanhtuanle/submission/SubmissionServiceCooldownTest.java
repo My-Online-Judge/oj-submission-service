@@ -35,6 +35,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
@@ -79,7 +80,7 @@ class SubmissionServiceCooldownTest {
             s.setId(UUID.randomUUID());
             return s;
         });
-        when(judgeService.buildRequestedEvent(anyString(), anyString(), any(), any()))
+        when(judgeService.buildRequestedEvent(anyString(), anyString(), any(), any(), anyInt()))
                 .thenReturn(SubmissionRequestedEvent.builder().build());
         when(submissionMapper.toDto(any(Submission.class))).thenReturn(new SubmissionResponseDto());
     }

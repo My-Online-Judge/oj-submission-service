@@ -28,4 +28,11 @@ public class SubmissionRequestedEvent {
     private String testCaseId;
 
     private Boolean output;
+
+    /**
+     * The submission's {@code rejudge_count} when this request was queued: 0 for a submit, n after the n-th rejudge.
+     * judge-worker echoes it on {@code submission.started} and {@code submission.judged}, so a start or verdict of an
+     * earlier generation is not applied to a rejudged row.
+     */
+    private Integer rejudgeCount;
 }

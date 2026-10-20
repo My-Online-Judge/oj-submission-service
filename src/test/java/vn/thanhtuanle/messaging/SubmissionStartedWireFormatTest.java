@@ -25,5 +25,16 @@ class SubmissionStartedWireFormatTest {
         assertThat(event.submissionId()).isEqualTo("0b6f0a4e-9a4e-4c47-9d0e-5f3c2b1a0d9e");
         assertThat(event.worker()).isEqualTo("w1");
         assertThat(event.startedAt()).isEqualTo(Instant.parse("2026-10-19T05:00:00.123Z"));
+        assertThat(event.rejudgeCount()).as("an old worker sends no generation").isNull();
+    }
+
+    @Test
+    void theGenerationTheWorkerEchoesIsRead() throws Exception {
+        String json = "{\"submissionId\":\"0b6f0a4e-9a4e-4c47-9d0e-5f3c2b1a0d9e\",\"worker\":\"w1\","
+                + "\"startedAt\":\"2026-10-19T05:00:00.123Z\",\"rejudgeCount\":3}";
+
+        SubmissionStartedEvent event = JacksonUtils.enhancedObjectMapper().readValue(json, SubmissionStartedEvent.class);
+
+        assertThat(event.rejudgeCount()).isEqualTo(3);
     }
 }

@@ -30,4 +30,7 @@ public class SubmissionJudgedEvent {
     private String errorMessage;
 
     private List<JudgeResultDto> details;
+
+    /** The request's generation, echoed by the worker; null from an old worker or a request queued before it. */
+    private Integer rejudgeCount;
 }

@@ -74,6 +74,19 @@ public interface SubmissionRepository extends JpaRepository<Submission, UUID> {
                      @Param("now") LocalDateTime now);
 
     /**
+     * {@link #applyStarted} of the generation {@code gen} only: a start of an earlier judging (the row was rejudged
+     * since) matches no row. A separate query rather than an optional parameter: Postgres cannot type a null
+     * parameter in {@code :gen IS NULL OR ...}.
+     */
+    @Modifying(clearAutomatically = true)
+    @Query("UPDATE Submission s SET s.status = 7, s.judgingStartedAt = :startedAt, s.updatedAt = :now "
+            + "WHERE s.id = :id AND s.status IN (6, 7) "
+            + "AND (s.judgingStartedAt IS NULL OR s.judgingStartedAt < :startedAt) "
+            + "AND s.rejudgeCount = :gen")
+    int applyStartedOfGeneration(@Param("id") UUID id, @Param("startedAt") LocalDateTime startedAt,
+                                 @Param("now") LocalDateTime now, @Param("gen") int gen);
+
+    /**
      * Records a verdict over a PENDING or JUDGING submission only. A finished submission (a duplicate or late verdict,
      * or one reconcile already failed) and an unknown id are left alone: 0 rows. The persistence context is flushed
      * before and cleared after, so a following read sees the written row.
@@ -91,6 +104,24 @@ public interface SubmissionRepository extends JpaRepository<Submission, UUID> {
                      @Param("now") LocalDateTime now);
 
     /**
+     * {@link #applyVerdict} of the generation {@code gen} only: a verdict of an earlier judging (a redelivery, or a
+     * dead-letter replay after a rejudge) matches no row. Separate from {@link #applyVerdict} for the same reason as
+     * {@link #applyStartedOfGeneration}.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            UPDATE Submission s
+            SET s.status = :status, s.result = :result, s.cpuTime = :cpuTime, s.time = :time, s.memory = :memory,
+                s.errorMessage = :errorMessage, s.details = :details, s.updatedAt = :now
+            WHERE s.id = :id AND s.status IN (6, 7) AND s.rejudgeCount = :gen
+            """)
+    int applyVerdictOfGeneration(@Param("id") UUID id, @Param("status") int status, @Param("result") Integer result,
+                                 @Param("cpuTime") Integer cpuTime, @Param("time") int time,
+                                 @Param("memory") Long memory, @Param("errorMessage") String errorMessage,
+                                 @Param("details") List<JudgeResultDto> details, @Param("now") LocalDateTime now,
+                                 @Param("gen") int gen);
+
+    /**
      * Puts a finished submission back to PENDING for a rejudge: the previous verdict, its times and its start are
      * cleared and the rejudge is counted. A PENDING or JUDGING submission (one already queued or rejudged meanwhile)
      * and an unknown id are left alone: 0 rows. Flushed before and cleared after, so a following read sees the row.
@@ -103,6 +134,13 @@ public interface SubmissionRepository extends JpaRepository<Submission, UUID> {
             WHERE s.id = :id AND s.status NOT IN (6, 7)
             """)
     int resetForRejudge(@Param("id") UUID id, @Param("now") LocalDateTime now);
+
+    /**
+     * The submission's committed {@code rejudge_count}, read fresh (a scalar projection, like {@link #findStatusById}).
+     * Read right after {@link #resetForRejudge} in the same transaction, it is the generation that reset set.
+     */
+    @Query("select s.rejudgeCount from Submission s where s.id = :id")
+    Integer findRejudgeCountById(@Param("id") UUID id);
 
     /** The submission with its language loaded, for mapping outside a transaction (VerdictPush). */
     @EntityGraph(attributePaths = "language")

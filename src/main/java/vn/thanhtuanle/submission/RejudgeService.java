@@ -66,7 +66,9 @@ public class RejudgeService {
                 if (submissionRepository.resetForRejudge(id, LocalDateTime.now()) == 0) {
                     throw new AppException(ErrorCode.SUBMISSION_NOT_FINISHED);
                 }
-                queue(id, sourceCode, spec, language);
+                // Re-read rather than the loaded count + 1: another rejudge may have run to its verdict since the
+                // load. The reset holds the row lock until commit, so this is the generation this reset set.
+                queue(id, sourceCode, spec, language, submissionRepository.findRejudgeCountById(id));
             });
         } catch (RuntimeException | Error e) {
             admission.release(1);
@@ -114,7 +116,10 @@ public class RejudgeService {
         return new RejudgeQueued(count);
     }
 
-    /** Resets each candidate still finished, then queues one judge request for each row actually reset. */
+    /**
+     * Resets each candidate still finished, then queues one judge request for each row actually reset, carrying the
+     * generation the reset gave it (the rows are re-read after the resets).
+     */
     private int resetAndQueue(List<UUID> candidates, JudgeSpec spec) {
         LocalDateTime now = LocalDateTime.now();
         List<UUID> reset = new ArrayList<>();
@@ -127,14 +132,16 @@ public class RejudgeService {
             return 0;
         }
         for (Submission submission : submissionRepository.findWithLanguageByIdIn(reset)) {
-            queue(submission.getId(), submission.getSourceCode(), spec, submission.getLanguage());
+            queue(submission.getId(), submission.getSourceCode(), spec, submission.getLanguage(),
+                    submission.getRejudgeCount());
         }
         return reset.size();
     }
 
     /** Appends the judge request; the outbox relay sends it once the caller's transaction has committed. */
-    private void queue(UUID id, String sourceCode, JudgeSpec spec, Language language) {
-        SubmissionRequestedEvent event = judgeService.buildRequestedEvent(id.toString(), sourceCode, spec, language);
+    private void queue(UUID id, String sourceCode, JudgeSpec spec, Language language, int rejudgeCount) {
+        SubmissionRequestedEvent event =
+                judgeService.buildRequestedEvent(id.toString(), sourceCode, spec, language, rejudgeCount);
         outboxWriter.append(KafkaTopics.SUBMISSION_REQUESTED, event.getSubmissionId(), event);
     }
 

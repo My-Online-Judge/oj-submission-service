@@ -57,9 +57,17 @@ public class JudgeResultConsumer {
             int time = event.getRealTime() == null ? 0 : event.getRealTime();
 
             // Only the first verdict over PENDING/JUDGING lands; a duplicate, a late verdict (reconcile already
-            // failed the submission) or an unknown id matches no row.
-            int updated = submissionRepository.applyVerdict(id, status, event.getResult(), event.getCpuTime(), time,
-                    event.getMemory(), errorMessage, event.getDetails(), LocalDateTime.now());
+            // failed the submission), one of an earlier generation (rejudged since) or an unknown id matches no row.
+            // A verdict without a generation (an old worker, a request queued before generations) is applied as
+            // before.
+            Integer generation = event.getRejudgeCount();
+            LocalDateTime now = LocalDateTime.now();
+            int updated = generation == null
+                    ? submissionRepository.applyVerdict(id, status, event.getResult(), event.getCpuTime(), time,
+                            event.getMemory(), errorMessage, event.getDetails(), now)
+                    : submissionRepository.applyVerdictOfGeneration(id, status, event.getResult(),
+                            event.getCpuTime(), time, event.getMemory(), errorMessage, event.getDetails(), now,
+                            generation);
             if (updated == 0) {
                 log.info("late or duplicate verdict for submission {}", id);
                 return;

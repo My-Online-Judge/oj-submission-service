@@ -132,6 +132,37 @@ class RejudgeServiceTest extends PostgresTest {
         verify(admission, never()).release(anyInt());
     }
 
+    @Test
+    void requestCarriesTheRejudgeCount() throws Exception {
+        UUID id = insertSubmission(0);
+        jdbc.update("UPDATE t_submissions SET rejudge_count = 2 WHERE id = ?", id);
+        when(problemCatalog.judgeSpec(slug, true)).thenReturn(currentSpec());
+
+        rejudgeService.rejudge(id);
+
+        assertThat(row(id).get("rejudge_count")).isEqualTo(3);
+        List<String> requests = requests(id);
+        assertThat(requests).hasSize(1);
+        assertThat(objectMapper.readTree(requests.get(0)).get("rejudgeCount").asInt())
+                .as("the worker echoes it; only a start or verdict of generation 3 lands").isEqualTo(3);
+    }
+
+    @Test
+    void theRequestCarriesTheCountItsOwnResetSet() throws Exception {
+        UUID id = insertSubmission(0);
+        // While this rejudge waits for the problems call, another rejudge of the row runs and its verdict lands: the
+        // row is finished again but one generation further, so this reset makes it 2, not 1.
+        when(problemCatalog.judgeSpec(slug, true)).thenAnswer(call -> {
+            jdbc.update("UPDATE t_submissions SET rejudge_count = rejudge_count + 1 WHERE id = ?", id);
+            return currentSpec();
+        });
+
+        rejudgeService.rejudge(id);
+
+        assertThat(row(id).get("rejudge_count")).isEqualTo(2);
+        assertThat(objectMapper.readTree(requests(id).get(0)).get("rejudgeCount").asInt()).isEqualTo(2);
+    }
+
     @ParameterizedTest
     @ValueSource(ints = {6, 7})
     void aSubmissionStillPendingOrJudgingIs409(int status) {

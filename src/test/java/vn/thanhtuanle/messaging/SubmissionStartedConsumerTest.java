@@ -30,11 +30,16 @@ class SubmissionStartedConsumerTest extends PostgresTest {
     @Autowired JdbcTemplate jdbc;
 
     private UUID insertSubmission(int status, LocalDateTime judgingStartedAt) {
+        return insertSubmission(status, judgingStartedAt, 0);
+    }
+
+    private UUID insertSubmission(int status, LocalDateTime judgingStartedAt, int rejudgeCount) {
         UUID id = UUID.randomUUID();
         jdbc.update("INSERT INTO t_submissions (id, status, \"time\", created_at, updated_at, language_id, problem_id, "
-                        + "problem_slug, user_id, judging_started_at) VALUES (?, ?, 0, ?, ?, ?, ?, 'started', ?, ?)",
+                        + "problem_slug, user_id, judging_started_at, rejudge_count) "
+                        + "VALUES (?, ?, 0, ?, ?, ?, ?, 'started', ?, ?, ?)",
                 id, status, AN_HOUR_AGO, AN_HOUR_AGO, C_LANGUAGE_ID, UUID.randomUUID(), UUID.randomUUID(),
-                judgingStartedAt);
+                judgingStartedAt, rejudgeCount);
         return id;
     }
 
@@ -44,7 +49,11 @@ class SubmissionStartedConsumerTest extends PostgresTest {
     }
 
     private static SubmissionStartedEvent started(UUID id, Instant at) {
-        return new SubmissionStartedEvent(id.toString(), "w1", at);
+        return new SubmissionStartedEvent(id.toString(), "w1", at, null);
+    }
+
+    private static SubmissionStartedEvent started(UUID id, Instant at, int generation) {
+        return new SubmissionStartedEvent(id.toString(), "w1", at, generation);
     }
 
     private static LocalDateTime local(Instant instant) {
@@ -93,6 +102,32 @@ class SubmissionStartedConsumerTest extends PostgresTest {
     }
 
     @Test
+    void aStartOfTheRowsGenerationIsApplied() {
+        UUID id = insertSubmission(6, null, 2);
+        Instant startedAt = Instant.parse("2026-10-19T05:00:00.123Z");
+
+        consumer.onStarted(started(id, startedAt, 2));
+
+        assertThat(row(id).get("status")).isEqualTo(7);
+        assertThat(jdbc.queryForObject("SELECT judging_started_at FROM t_submissions WHERE id = ?",
+                LocalDateTime.class, id)).isEqualTo(local(startedAt));
+    }
+
+    @Test
+    void aStartOfAnEarlierGenerationChangesNothing() {
+        // Rejudged since: the row is at generation 2, the start belongs to the judging before.
+        UUID id = insertSubmission(6, null, 2);
+
+        consumer.onStarted(started(id, Instant.parse("2026-10-19T05:00:00.123Z"), 1));
+
+        Map<String, Object> row = row(id);
+        assertThat(row.get("status")).isEqualTo(6);
+        assertThat(row.get("judging_started_at")).isNull();
+        assertThat(jdbc.queryForObject("SELECT updated_at FROM t_submissions WHERE id = ?",
+                LocalDateTime.class, id)).isEqualTo(AN_HOUR_AGO);
+    }
+
+    @Test
     void aStartForAFinishedSubmissionChangesNothing() {
         UUID id = insertSubmission(0, null);
 
@@ -112,11 +147,11 @@ class SubmissionStartedConsumerTest extends PostgresTest {
 
         assertThatCode(() -> consumer.onStarted(null)).doesNotThrowAnyException();
         assertThatCode(() -> consumer.onStarted(started(UUID.randomUUID(), at))).doesNotThrowAnyException();
-        assertThatCode(() -> consumer.onStarted(new SubmissionStartedEvent("not-a-uuid", "w1", at)))
+        assertThatCode(() -> consumer.onStarted(new SubmissionStartedEvent("not-a-uuid", "w1", at, null)))
                 .doesNotThrowAnyException();
-        assertThatCode(() -> consumer.onStarted(new SubmissionStartedEvent(null, "w1", at)))
+        assertThatCode(() -> consumer.onStarted(new SubmissionStartedEvent(null, "w1", at, 0)))
                 .doesNotThrowAnyException();
-        assertThatCode(() -> consumer.onStarted(new SubmissionStartedEvent(id.toString(), "w1", null)))
+        assertThatCode(() -> consumer.onStarted(new SubmissionStartedEvent(id.toString(), "w1", null, 0)))
                 .doesNotThrowAnyException();
 
         Map<String, Object> row = row(id);

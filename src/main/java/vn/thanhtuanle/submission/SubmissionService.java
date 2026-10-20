@@ -99,7 +99,7 @@ public class SubmissionService {
         MDC.put("submissionId", submission.getId().toString());
         try {
             SubmissionRequestedEvent event = judgeService.buildRequestedEvent(
-                    submission.getId().toString(), submission.getSourceCode(), spec, language);
+                    submission.getId().toString(), submission.getSourceCode(), spec, language, 0);
             // Sent by the outbox relay once this transaction has committed — never for a rolled-back row.
             outboxWriter.append(KafkaTopics.SUBMISSION_REQUESTED, event.getSubmissionId(), event);
             log.info("Submission {} queued for judging", submission.getId());

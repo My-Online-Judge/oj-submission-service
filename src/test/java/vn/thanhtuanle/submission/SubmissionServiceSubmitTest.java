@@ -110,7 +110,8 @@ class SubmissionServiceSubmitTest {
             return s;
         });
         SubmissionRequestedEvent event = SubmissionRequestedEvent.builder().submissionId("x").build();
-        when(judgeService.buildRequestedEvent(any(), any(), eq(spec), any())).thenReturn(event);
+        // A new submission is generation 0.
+        when(judgeService.buildRequestedEvent(any(), any(), eq(spec), any(), eq(0))).thenReturn(event);
         when(submissionMapper.toDto(any(Submission.class)))
                 .thenReturn(SubmissionResponseDto.builder()
                         .status(SubmissionResult.PENDING.getValue()).build());

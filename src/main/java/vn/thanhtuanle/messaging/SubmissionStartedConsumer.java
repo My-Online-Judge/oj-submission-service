@@ -52,9 +52,13 @@ public class SubmissionStartedConsumer {
             LocalDateTime now = LocalDateTime.now();
             LocalDateTime reported = LocalDateTime.ofInstant(event.startedAt(), ZoneId.systemDefault());
             LocalDateTime startedAt = reported.isAfter(now) ? now : reported;
-            int updated = submissionRepository.applyStarted(id, startedAt, now);
+            // A start without a generation (an old worker, a request queued before generations) is applied as before.
+            Integer generation = event.rejudgeCount();
+            int updated = generation == null
+                    ? submissionRepository.applyStarted(id, startedAt, now)
+                    : submissionRepository.applyStartedOfGeneration(id, startedAt, now, generation);
             if (updated == 0) {
-                log.debug("Ignoring the start of a finished or unknown submission {}", id);
+                log.debug("Ignoring the start of a finished, unknown or since rejudged submission {}", id);
             }
         } finally {
             MDC.remove("submissionId");

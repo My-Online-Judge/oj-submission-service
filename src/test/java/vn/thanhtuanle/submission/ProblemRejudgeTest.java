@@ -183,6 +183,26 @@ class ProblemRejudgeTest extends PostgresTest {
         verify(admission).admit(2);
     }
 
+    @Test
+    void requestsCarryTheRejudgeCount() throws Exception {
+        List<UUID> ids = insert(AC, WA);
+        jdbc.update("UPDATE t_submissions SET rejudge_count = 2 WHERE id = ?", ids.get(1));
+        when(problemCatalog.judgeSpec(slug, true)).thenReturn(currentSpec());
+
+        rejudgeService.rejudgeProblem(slug, null);
+
+        assertThat(row(ids.get(0)).get("rejudge_count")).isEqualTo(1);
+        assertThat(row(ids.get(1)).get("rejudge_count")).isEqualTo(3);
+        assertThat(requestedGeneration(ids.get(0))).isEqualTo(1);
+        assertThat(requestedGeneration(ids.get(1))).isEqualTo(3);
+    }
+
+    private int requestedGeneration(UUID id) throws Exception {
+        String payload = jdbc.queryForObject("SELECT convert_from(payload, 'UTF8') FROM t_outbox "
+                + "WHERE topic = 'submission.requested' AND message_key = ?", String.class, id.toString());
+        return objectMapper.readTree(payload).get("rejudgeCount").asInt();
+    }
+
     @ParameterizedTest
     @ValueSource(ints = {PENDING, JUDGING, 99})
     void aNonFinalStatusFilterIs400(int status) {

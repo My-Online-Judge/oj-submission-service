@@ -4,6 +4,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
@@ -38,6 +39,7 @@ class SubmitTransactionBoundaryTest extends PostgresTest {
     @Autowired SubmissionRepository submissionRepository;
     @Autowired OutboxRepository outboxRepository;
     @Autowired LanguageRepository languageRepository;
+    @Autowired JdbcTemplate jdbc;
 
     @MockitoBean ProblemCatalog problemCatalog;
     @MockitoBean SubmissionRateLimiter submissionRateLimiter;
@@ -82,5 +84,19 @@ class SubmitTransactionBoundaryTest extends PostgresTest {
                 .containsExactly(false, false);
         assertThat(submissionRepository.findById(dto.getId())).isPresent();
         assertThat(outboxRepository.count()).isEqualTo(outboxBefore + 1);
+    }
+
+    @Test
+    void theJudgeRequestOfASubmitIsGenerationZero() {
+        when(problemCatalog.judgeSpec("a-plus-b", false))
+                .thenReturn(new JudgeSpec(UUID.randomUUID(), "a-plus-b", 1000, 256L, "abc123def456"));
+
+        var dto = submissionService.submit(SubmissionRequestDto.builder()
+                .sourceCode("int main(){}").languageIdentifier(identifier)
+                .problemSlug("a-plus-b").shareSubmission(false).build());
+
+        String request = jdbc.queryForObject("SELECT convert_from(payload, 'UTF8') FROM t_outbox "
+                + "WHERE topic = 'submission.requested' AND message_key = ?", String.class, dto.getId().toString());
+        assertThat(request).contains("\"rejudgeCount\":0");
     }
 }

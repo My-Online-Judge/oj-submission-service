@@ -17,7 +17,7 @@ class JudgeServiceTestCaseIdTest {
         JudgeSpec spec = new JudgeSpec(UUID.randomUUID(), "simple-a-plus-b", 1000, 64L, "abc123def456");
 
         SubmissionRequestedEvent event =
-                service.buildRequestedEvent("sub-1", "int main(){}", spec, languageStub());
+                service.buildRequestedEvent("sub-1", "int main(){}", spec, languageStub(), 0);
 
         assertThat(event.getTestCaseId()).isEqualTo("simple-a-plus-b__abc123def456");
         assertThat(event.getMaxCpuTime()).isEqualTo(1000);

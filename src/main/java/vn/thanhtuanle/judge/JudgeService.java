@@ -61,8 +61,9 @@ public class JudgeService {
         log.info("End validate source code");
     }
 
+    /** {@code rejudgeCount} is the submission's generation: 0 for a submit, its {@code rejudge_count} after a reset. */
     public SubmissionRequestedEvent buildRequestedEvent(String submissionId, String sourceCode,
-            JudgeSpec spec, Language language) {
+            JudgeSpec spec, Language language, int rejudgeCount) {
         log.info("Building judge request for problem: {}", spec.problemSlug());
 
         JudgeCompileConfigDto compileConfig = JudgeCompileConfigDto.builder()
@@ -98,6 +99,7 @@ public class JudgeService {
                 .maxMemory(spec.memoryLimitMb() * BYTES_PER_MB)
                 .testCaseId(spec.problemSlug() + "__" + spec.testCaseVersion())
                 .output(true)
+                .rejudgeCount(rejudgeCount)
                 .build();
     }
 }

@@ -38,7 +38,7 @@ class SubmissionRequestedWireFormatTest {
         JudgeSpec spec = new JudgeSpec(UUID.fromString("00000000-0000-0000-0000-000000000001"),
                 "simple-a-plus-b", 1000, 256L, "8a0102cd409f");
         return new JudgeService().buildRequestedEvent("00000000-0000-0000-0000-0000000000aa",
-                "#include <stdio.h>\nint main(){return 0;}\n", spec, c);
+                "#include <stdio.h>\nint main(){return 0;}\n", spec, c, 0);
     }
 
     private String outbox(SubmissionRequestedEvent event) throws Exception {
@@ -59,7 +59,7 @@ class SubmissionRequestedWireFormatTest {
     @Test
     void theWireFormatIsPinned() throws Exception {
         assertThat(outbox(cJudgeRequest())).isEqualTo("{\"submissionId\":\"00000000-0000-0000-0000-0000000000aa\","
-                + "\"src\":\"#include <stdio.h>\\nint main(){return 0;}\\n\",\"output\":true,"
+                + "\"src\":\"#include <stdio.h>\\nint main(){return 0;}\\n\",\"output\":true,\"rejudgeCount\":0,"
                 + "\"language_config\":{\"compile\":{\"env\":[],\"src_name\":\"main.c\",\"exe_name\":\"main\","
                 + "\"max_cpu_time\":3000,\"max_real_time\":5000,\"max_memory\":268435456,"
                 + "\"compile_command\":\"/usr/bin/gcc -DONLINE_JUDGE -O2 -w -fmax-errors=3 -std=c11 {src_path} -lm -o {exe_path}\"},"

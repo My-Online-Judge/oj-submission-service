@@ -92,6 +92,8 @@ judge:
   reconcile-interval-ms: ${JUDGE_RECONCILE_INTERVAL_MS:60000}
   # OjMetrics recounts PENDING + JUDGING this often (the oj.queue.depth gauge); a scrape never queries the database.
   queue-depth-refresh-ms: 5000
+  # SubmissionAdmission refuses a submit (or a rejudge) with 503 QUEUE_FULL, Retry-After 30, once this many are queued.
+  max-queue-depth: ${JUDGE_MAX_QUEUE_DEPTH:500}
 
 oj:
   security:

@@ -44,6 +44,7 @@ class SubmissionServiceStreamTest {
     @Mock SubmissionSseRegistry sseRegistry;
     @Mock SubmissionDetailAssembler detailAssembler;
     @Mock EntityManager entityManager;
+    @Mock SubmissionAdmission admission;
 
     @Spy TransactionOperations transactions = TransactionOperations.withoutTransaction();
 

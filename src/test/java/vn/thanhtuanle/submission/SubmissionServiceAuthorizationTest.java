@@ -35,6 +35,7 @@ class SubmissionServiceAuthorizationTest {
     @Mock SubmissionDetailAssembler detailAssembler;
     @Mock CurrentUser currentUser;
     @Mock SubmissionSseRegistry sseRegistry;
+    @Mock SubmissionAdmission admission;
     @Spy TransactionOperations transactions = TransactionOperations.withoutTransaction();
 
     @InjectMocks SubmissionService service;

@@ -30,6 +30,7 @@ class SubmissionServiceDetailsTest {
     @Mock SubmissionMapper submissionMapper;
     @Mock SubmissionDetailAssembler detailAssembler;
     @Mock CurrentUser currentUser;
+    @Mock SubmissionAdmission admission;
     @Spy TransactionOperations transactions = TransactionOperations.withoutTransaction();
 
     @InjectMocks SubmissionService service;

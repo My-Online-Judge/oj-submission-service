@@ -22,6 +22,7 @@ import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -83,5 +84,19 @@ class SubmissionRateLimiterTest {
         limiter.acquire(USER);
 
         assertThat(registry.counter("oj.redis.fallback", "lookup", "rate_limit").count()).isEqualTo(1);
+    }
+
+    @Test
+    void releaseDeletesTheCooldownKey() {
+        limiter.release(USER);
+
+        verify(redis).delete("oj:rl:submit:" + USER);
+    }
+
+    @Test
+    void aReleaseWithoutRedisDoesNotThrow() {
+        when(redis.delete(anyString())).thenThrow(new RuntimeException("down"));
+
+        assertThatCode(() -> limiter.release(USER)).doesNotThrowAnyException();
     }
 }

@@ -6,6 +6,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.transaction.support.TransactionOperations;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
@@ -53,6 +54,7 @@ class SubmissionServiceCooldownTest {
     @Mock OutboxWriter outboxWriter;
     @Mock SubmissionSseRegistry sseRegistry;
     @Mock SubmissionRateLimiter submissionRateLimiter;
+    @Mock SubmissionAdmission admission;
 
     @Spy TransactionOperations transactions = TransactionOperations.withoutTransaction();
 
@@ -109,6 +111,30 @@ class SubmissionServiceCooldownTest {
         when(problemCatalog.judgeSpec("simple-a-plus-b")).thenThrow(new ProblemCatalogUnavailableException());
         assertThatThrownBy(() -> service.submit(req)).isInstanceOf(ProblemCatalogUnavailableException.class);
         verify(submissionRateLimiter, never()).acquire(any());
+    }
+
+    @Test
+    void aFailedTransactionGivesBackTheCooldownAndTheQueueSlot() {
+        // No submission exists: the user must not sit out the cooldown for it, nor the queue count it.
+        doThrow(new DataAccessResourceFailureException("db down")).when(submissionRepository).save(any());
+
+        assertThatThrownBy(() -> service.submit(req)).isInstanceOf(DataAccessResourceFailureException.class);
+
+        verify(submissionRateLimiter).acquire(userId);
+        verify(submissionRateLimiter).release(userId);
+        verify(admission).release(1);
+    }
+
+    @Test
+    void aCooldownRefusalKeepsTheEarlierCooldownButGivesTheSlotBack() {
+        // The key belongs to the user's previous submit: deleting it would lift the cooldown.
+        doThrow(new RateLimitedException(ErrorCode.SUBMISSION_RATE_LIMITED, 7))
+                .when(submissionRateLimiter).acquire(userId);
+
+        assertThatThrownBy(() -> service.submit(req)).isInstanceOf(RateLimitedException.class);
+
+        verify(submissionRateLimiter, never()).release(any());
+        verify(admission).release(1);
     }
 
     @Test

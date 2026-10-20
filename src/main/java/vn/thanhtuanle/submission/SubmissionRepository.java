@@ -20,7 +20,7 @@ import vn.thanhtuanle.judge.dto.JudgeResultDto;
 @Repository
 public interface SubmissionRepository extends JpaRepository<Submission, UUID> {
 
-    /** Count submissions currently in one of the given statuses — used by the oj.queue.depth gauge. */
+    /** Count submissions currently in one of the given statuses — OjMetrics' queue-depth refresh (gauge, admission). */
     long countByStatusIn(Collection<Integer> statuses);
 
     /**

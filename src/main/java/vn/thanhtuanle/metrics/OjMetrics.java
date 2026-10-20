@@ -98,6 +98,14 @@ public class OjMetrics {
         }
     }
 
+    /**
+     * Gives back slots reserved for work that was then not queued. Never below zero: a refresh in between has already
+     * dropped the reservation, and the depth is at most one window low until the next one.
+     */
+    public void releaseQueueSlots(int count) {
+        queueDepth.updateAndGet(depth -> Math.max(0, depth - count));
+    }
+
     private static String statusName(int status) {
         try {
             return SubmissionResult.fromValue(status).name();

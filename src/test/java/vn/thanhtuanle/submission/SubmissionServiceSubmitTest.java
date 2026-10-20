@@ -22,6 +22,7 @@ import vn.thanhtuanle.language.LanguageRepository;
 import vn.thanhtuanle.messaging.event.SubmissionRequestedEvent;
 import vn.thanhtuanle.submission.problem.JudgeSpec;
 import vn.thanhtuanle.submission.problem.ProblemCatalog;
+import vn.thanhtuanle.submission.problem.ProblemNotFoundException;
 import vn.thanhtuanle.submission.dto.SubmissionRequestDto;
 import vn.thanhtuanle.submission.dto.SubmissionResponseDto;
 import vn.thanhtuanle.submission.mapper.SubmissionMapper;
@@ -34,6 +35,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
@@ -49,6 +51,7 @@ class SubmissionServiceSubmitTest {
     @Mock OutboxWriter outboxWriter;
     @Mock SubmissionSseRegistry sseRegistry;
     @Mock SubmissionRateLimiter submissionRateLimiter;
+    @Mock SubmissionAdmission admission;
 
     @Spy TransactionOperations transactions = TransactionOperations.withoutTransaction();
 
@@ -91,6 +94,50 @@ class SubmissionServiceSubmitTest {
         assertThat(saved.getValue().getProblemSlug()).isEqualTo("a-plus-b");
         verify(outboxWriter).append("submission.requested", "x", event);
         assertThat(dto.getStatus()).isEqualTo(SubmissionResult.PENDING.getValue());
+        verify(admission).admit(1);
+        verify(admission, never()).release(anyInt());
+        verify(submissionRateLimiter, never()).release(any());
+    }
+
+    @Test
+    void aFullQueueRefusesBeforeTheProblemLookupAndTheCooldown() {
+        doThrow(new RateLimitedException(ErrorCode.QUEUE_FULL, SubmissionAdmission.RETRY_AFTER_SECONDS))
+                .when(admission).admit(1);
+
+        assertThatThrownBy(() -> submissionService.submit(SubmissionRequestDto.builder()
+                .sourceCode("int main(){}").languageIdentifier("cpp").problemSlug("a-plus-b").build()))
+                .isInstanceOfSatisfying(RateLimitedException.class,
+                        e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.QUEUE_FULL));
+
+        verify(judgeService).validate("int main(){}");
+        verifyNoInteractions(problemCatalog, languageRepository, currentUser, submissionRateLimiter,
+                submissionRepository, outboxWriter);
+        verify(admission, never()).release(anyInt());  // nothing was reserved
+    }
+
+    @Test
+    void anInvalidSourceReservesNoQueueSlot() {
+        doThrow(new IllegalArgumentException("Source code cannot be empty")).when(judgeService).validate("");
+
+        assertThatThrownBy(() -> submissionService.submit(SubmissionRequestDto.builder()
+                .sourceCode("").languageIdentifier("cpp").problemSlug("a-plus-b").build()))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        verifyNoInteractions(admission);
+    }
+
+    @Test
+    void aRefusalAfterTheReservationGivesTheSlotBack() {
+        // A 404 burns no cooldown, so without the release a stream of them could fill the queue for 5 s.
+        when(problemCatalog.judgeSpec("no-such-problem")).thenThrow(new ProblemNotFoundException());
+
+        assertThatThrownBy(() -> submissionService.submit(SubmissionRequestDto.builder()
+                .sourceCode("int main(){}").languageIdentifier("cpp").problemSlug("no-such-problem").build()))
+                .isInstanceOf(ProblemNotFoundException.class);
+
+        verify(admission).admit(1);
+        verify(admission).release(1);
+        verifyNoInteractions(submissionRateLimiter);
     }
 
     @Test

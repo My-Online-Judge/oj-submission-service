@@ -67,6 +67,22 @@ class OjMetricsQueueDepthTest {
     }
 
     @Test
+    void releasedSlotsGoBackButTheDepthNeverGoesBelowZero() {
+        when(repo.countByStatusIn(QUEUED)).thenReturn(499L);
+        metrics.refreshQueueDepth();
+        metrics.tryReserveQueueSlots(1, 500);
+
+        metrics.releaseQueueSlots(1);
+        assertThat(metrics.queueDepth()).isEqualTo(499);
+
+        // A refresh already dropped the reservation (its row was never committed): the release must not go negative.
+        when(repo.countByStatusIn(QUEUED)).thenReturn(0L);
+        metrics.refreshQueueDepth();
+        metrics.releaseQueueSlots(1);
+        assertThat(metrics.queueDepth()).isZero();
+    }
+
+    @Test
     void theNextRefreshOverwritesTheReservations() {
         when(repo.countByStatusIn(QUEUED)).thenReturn(10L);
         metrics.refreshQueueDepth();

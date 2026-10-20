@@ -50,31 +50,45 @@ public class SubmissionService {
     // Shared transactional EntityManager proxy — used only for refresh() in streamVerdict.
     private final EntityManager entityManager;
     private final SubmissionRateLimiter submissionRateLimiter;
+    private final SubmissionAdmission admission;
     private final CurrentUser currentUser;
     private final TransactionOperations transactions;
 
     /**
      * Not transactional as a whole: the gRPC call and the Redis cooldown must not hold a database connection while
      * they wait. Everything that can refuse the request comes first; only the row and its outbox message are one
-     * transaction.
+     * transaction. A submit that fails after reserving its queue slot gives it back, and one whose transaction fails
+     * also gives back the cooldown it armed: no submission exists for either.
      */
     public SubmissionResponseDto submit(SubmissionRequestDto req) {
         log.info("Start submission for problem: {}", req.getProblemSlug());
         judgeService.validate(req.getSourceCode());
 
-        // Resolved first — limits and the bundle version included — so neither an unknown problem nor one
-        // that cannot be judged burns the cooldown below.
-        JudgeSpec spec = problemCatalog.judgeSpec(req.getProblemSlug());
-        Language language = languageRepository.findByIdentifier(req.getLanguageIdentifier())
-                .filter(l -> !l.isDisabled())
-                .orElseThrow(() -> new ResourceNotFoundException("Language not found"));
-        UUID userId = currentUser.id();
+        // A full queue refuses first: no gRPC call, no cooldown armed.
+        admission.admit(1);
+        UUID cooledDown = null;
+        try {
+            // Resolved first — limits and the bundle version included — so neither an unknown problem nor one
+            // that cannot be judged burns the cooldown below.
+            JudgeSpec spec = problemCatalog.judgeSpec(req.getProblemSlug());
+            Language language = languageRepository.findByIdentifier(req.getLanguageIdentifier())
+                    .filter(l -> !l.isDisabled())
+                    .orElseThrow(() -> new ResourceNotFoundException("Language not found"));
+            UUID userId = currentUser.id();
 
-        // Cooldown gate: sits after problem/language/user resolve so a 404 never burns it,
-        // and before the row exists so a throttled submit leaves no trace.
-        submissionRateLimiter.acquire(userId);
+            // Cooldown gate: sits after problem/language/user resolve so a 404 never burns it,
+            // and before the row exists so a throttled submit leaves no trace.
+            submissionRateLimiter.acquire(userId);
+            cooledDown = userId;
 
-        return transactions.execute(status -> persistAndQueue(req, spec, language, userId));
+            return transactions.execute(status -> persistAndQueue(req, spec, language, userId));
+        } catch (RuntimeException | Error e) {
+            admission.release(1);
+            if (cooledDown != null) {
+                submissionRateLimiter.release(cooledDown);
+            }
+            throw e;
+        }
     }
 
     private SubmissionResponseDto persistAndQueue(SubmissionRequestDto req, JudgeSpec spec, Language language,

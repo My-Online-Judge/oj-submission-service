@@ -68,4 +68,16 @@ public class SubmissionRateLimiter {
         throttled.increment();
         throw new RateLimitedException(ErrorCode.SUBMISSION_RATE_LIMITED, retryAfter);
     }
+
+    /**
+     * Lifts the cooldown that {@link #acquire} armed, for a submit that then did not happen (its transaction failed).
+     * Best effort: Redis down only means the user waits the cooldown out.
+     */
+    public void release(UUID userId) {
+        try {
+            redis.delete(KEY_PREFIX + userId);
+        } catch (Exception e) {
+            log.warn("Could not release the submission cooldown: {}", e.getMessage());
+        }
+    }
 }

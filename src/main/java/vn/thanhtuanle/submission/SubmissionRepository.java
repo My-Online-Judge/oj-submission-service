@@ -177,4 +177,25 @@ public interface SubmissionRepository extends JpaRepository<Submission, UUID>, J
             """)
     List<UUID> findRejudgeCandidatesWithStatus(@Param("slug") String slug, @Param("status") int status,
                                                Pageable page);
+
+    /**
+     * One row for a user's finished submissions (status not 6 or 7): count, accepted count (null when there are none)
+     * and distinct problems attempted.
+     */
+    @Query("""
+            SELECT COUNT(s), SUM(CASE WHEN s.status = 0 THEN 1L ELSE 0L END), COUNT(DISTINCT s.problemSlug)
+            FROM Submission s
+            WHERE s.userId = :userId AND s.status NOT IN (6, 7)
+            """)
+    List<Object[]> aggregateTerminal(@Param("userId") UUID userId);
+
+    /** The distinct slugs a user got accepted on, ascending. */
+    @Query("SELECT DISTINCT s.problemSlug FROM Submission s WHERE s.userId = :userId AND s.status = 0 "
+            + "ORDER BY s.problemSlug")
+    List<String> findSolvedSlugs(@Param("userId") UUID userId);
+
+    /** A user's newest submissions of any status, with the language loaded (no N+1). */
+    @EntityGraph(attributePaths = "language")
+    @Query("SELECT s FROM Submission s WHERE s.userId = :userId ORDER BY s.createdAt DESC, s.id DESC")
+    List<Submission> findRecent(@Param("userId") UUID userId, Pageable page);
 }

@@ -1,6 +1,8 @@
 package vn.thanhtuanle.submission.problem;
 
+import java.util.Collection;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -23,4 +25,11 @@ public interface ProblemCatalog {
      * empty, so every row shows as hidden — failing closed.
      */
     Map<String, SampleTestCase> sampleCases(UUID problemId);
+
+    /**
+     * Which of the slugs are ACTIVE problems (at most 100 per call). One call.
+     *
+     * @throws ProblemCatalogUnavailableException problems cannot be reached right now
+     */
+    Set<String> visibleSlugs(Collection<String> slugs);
 }

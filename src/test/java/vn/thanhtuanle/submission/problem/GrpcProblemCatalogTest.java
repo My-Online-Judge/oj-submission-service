@@ -70,6 +70,24 @@ class GrpcProblemCatalogTest {
     }
 
     @Test
+    void visibleSlugsAsksOnceAndReturnsTheAnswer() {
+        problems.answer(vn.thanhtuanle.oj.common.grpc.problem.v1.ListVisibleSlugsResponse.newBuilder()
+                .addSlugs("a").build());
+
+        assertThat(catalog().visibleSlugs(java.util.List.of("a", "b"))).containsExactly("a");
+        assertThat(problems.lastSlugs).containsExactly("a", "b");
+        assertThat(problems.calls).hasValue(1);
+    }
+
+    @Test
+    void visibleSlugsFailureIsUnavailable() {
+        problems.fail(Status.INTERNAL);
+
+        assertThatThrownBy(() -> catalog().visibleSlugs(java.util.List.of("a")))
+                .isInstanceOf(ProblemCatalogUnavailableException.class);
+    }
+
+    @Test
     void aRefusedCallCountsAsAFailureAndNeverReachesTheServer() {
         GrpcProblemCatalog catalog = new GrpcProblemCatalog(
                 ProblemInternalGrpc.newBlockingStub(channel).withInterceptors(new ServiceTokenClientInterceptor(TOKEN)),
@@ -240,6 +258,15 @@ class GrpcProblemCatalogTest {
         public void getJudgeSpec(GetJudgeSpecRequest request, StreamObserver<JudgeSpec> observer) {
             lastSlug = request.getProblemSlug();
             lastAllowInactive = request.getAllowInactive();
+            reply(observer);
+        }
+
+        volatile java.util.List<String> lastSlugs;
+
+        @Override
+        public void listVisibleSlugs(vn.thanhtuanle.oj.common.grpc.problem.v1.ListVisibleSlugsRequest request,
+                StreamObserver<vn.thanhtuanle.oj.common.grpc.problem.v1.ListVisibleSlugsResponse> observer) {
+            lastSlugs = request.getSlugsList();
             reply(observer);
         }
 

@@ -7,11 +7,14 @@ import io.grpc.StatusRuntimeException;
 import lombok.extern.slf4j.Slf4j;
 import vn.thanhtuanle.oj.common.grpc.problem.v1.GetJudgeSpecRequest;
 import vn.thanhtuanle.oj.common.grpc.problem.v1.GetSampleTestCasesRequest;
+import vn.thanhtuanle.oj.common.grpc.problem.v1.ListVisibleSlugsRequest;
 import vn.thanhtuanle.oj.common.grpc.problem.v1.ProblemInternalGrpc;
 
 import java.time.Duration;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
@@ -73,6 +76,19 @@ public class GrpcProblemCatalog implements ProblemCatalog {
         } catch (RuntimeException e) {
             log.warn("Sample test cases of problem {} unavailable, every row shows as hidden: {}", problemId, e.toString());
             return Map.of();
+        }
+    }
+
+    @Override
+    public Set<String> visibleSlugs(Collection<String> slugs) {
+        ListVisibleSlugsRequest request = ListVisibleSlugsRequest.newBuilder().addAllSlugs(slugs).build();
+        try {
+            return Set.copyOf(call(() -> withDeadline().listVisibleSlugs(request)).getSlugsList());
+        } catch (StatusRuntimeException e) {
+            log.warn("problem-service could not list the visible slugs: {}", e.getStatus());
+            throw new ProblemCatalogUnavailableException();
+        } catch (CallNotPermittedException e) {
+            throw new ProblemCatalogUnavailableException();
         }
     }
 

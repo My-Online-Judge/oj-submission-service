@@ -27,6 +27,7 @@ public class SecurityConfig {
             "/swagger-ui/**",
             "/v3/api-docs/**",
             "/api/v1/languages",
+            "/api/v1/users/*/stats",
             // judge_server heartbeat: authenticated by X-Judge-Server-Token, not JWT
             "/api/judge_server_heartbeat",
             "/api/judge_server_heartbeat/",

@@ -15,11 +15,13 @@ import vn.thanhtuanle.entity.Language;
 import vn.thanhtuanle.entity.Submission;
 import vn.thanhtuanle.judge.dto.JudgeResultDto;
 import vn.thanhtuanle.language.LanguageRepository;
+import vn.thanhtuanle.oj.common.identity.IdentityUnavailableException;
 import vn.thanhtuanle.oj.common.identity.PublicUserClient;
 import vn.thanhtuanle.oj.common.security.OjJwtDecoders;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -101,5 +103,25 @@ class SubmissionSearchControllerTest {
                 .andExpect(status().isBadRequest());
         mockMvc.perform(get("/api/v1/submissions").param("result", "x").with(userWith("submission:read_any")))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void anUnknownUsernameIsAnEmptyPage() throws Exception {
+        when(publicUserClient.byUsername("ghost")).thenReturn(Optional.empty());
+
+        mockMvc.perform(get("/api/v1/submissions").param("username", "ghost").with(userWith("submission:read_any")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").isEmpty())
+                .andExpect(jsonPath("$.pagination.totalElements").value(0));
+    }
+
+    @Test
+    void identityBackingOffIs503IdentityUnavailable() throws Exception {
+        when(publicUserClient.byUsername("alice")).thenThrow(new IdentityUnavailableException("backing off", null));
+
+        mockMvc.perform(get("/api/v1/submissions").param("username", "alice").with(userWith("submission:read_any")))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("IDENTITY_UNAVAILABLE"))
+                .andExpect(jsonPath("$.message").value("Users are temporarily unavailable. Try again in a moment"));
     }
 }

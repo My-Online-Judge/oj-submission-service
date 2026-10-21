@@ -74,4 +74,16 @@ public class ProblemServiceClientConfig {
                 retries.retry(ProblemServiceResilience.VISIBILITY_NAME),
                 deadline, problemServiceRecovery);
     }
+
+    /** Warms the channel in the background once the app is ready (see {@link ProblemChannelWarmUp}). */
+    @Bean
+    public ProblemChannelWarmUp problemChannelWarmUp(ManagedChannel problemServiceChannel,
+            @Value("${oj.problems.rpc-token:}") String token,
+            @Value("${oj.problems.warm-up-deadline:10s}") Duration deadline) {
+        return new ProblemChannelWarmUp(problemServiceChannel, token, deadline, task -> {
+            Thread thread = new Thread(task, "problem-channel-warm-up");
+            thread.setDaemon(true);
+            thread.start();
+        });
+    }
 }

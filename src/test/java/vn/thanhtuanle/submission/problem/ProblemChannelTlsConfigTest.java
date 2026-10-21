@@ -184,6 +184,10 @@ class ProblemChannelTlsConfigTest {
         @Override
         public <ReqT, RespT> ServerCall.Listener<ReqT> interceptCall(ServerCall<ReqT, RespT> call, Metadata headers,
                 ServerCallHandler<ReqT, RespT> next) {
+            if ("ListVisibleSlugs".equals(call.getMethodDescriptor().getBareMethodName())) {
+                // the start-up warm-up (ProblemChannelWarmUp), which races the test's own calls
+                return next.startCall(call, headers);
+            }
             calls.add(subject(call.getAttributes().get(Grpc.TRANSPORT_ATTR_SSL_SESSION)) + " token="
                     + headers.containsKey(TOKEN_HEADER));
             return next.startCall(call, headers);

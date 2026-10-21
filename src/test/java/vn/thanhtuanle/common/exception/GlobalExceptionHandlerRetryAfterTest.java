@@ -21,4 +21,13 @@ class GlobalExceptionHandlerRetryAfterTest {
         assertThat(res.getHeaders().getFirst("Retry-After")).isEqualTo("7");
         assertThat(res.getBody().getMessage()).contains("submitting too fast");
     }
+
+    @Test
+    void unavailableProblems_say503AndWhenToRetry() {
+        ResponseEntity<ApiResponse<Object>> res = handler.handleRateLimitedException(
+                new vn.thanhtuanle.submission.problem.ProblemCatalogUnavailableException());
+
+        assertThat(res.getStatusCode().value()).isEqualTo(503);
+        assertThat(res.getHeaders().getFirst("Retry-After")).isEqualTo("5");
+    }
 }

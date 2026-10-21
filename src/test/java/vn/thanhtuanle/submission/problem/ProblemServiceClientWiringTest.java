@@ -18,10 +18,16 @@ class ProblemServiceClientWiringTest {
     @Autowired MeterRegistry meters;
     @Autowired ManagedChannel problemServiceChannel;
     @Autowired ChannelRecovery problemServiceRecovery;
+    @Autowired ProblemChannelWarmUp problemChannelWarmUp;
 
     @Test
     void theCatalogWatchesTheChannelItCalls() {
         assertThat(problemServiceRecovery.channel()).isSameAs(problemServiceChannel);
+    }
+
+    @Test
+    void theChannelIsWarmedAfterStartup() {
+        assertThat(problemChannelWarmUp).isNotNull();
     }
 
     @Test

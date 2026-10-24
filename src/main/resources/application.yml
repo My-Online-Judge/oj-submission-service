@@ -28,6 +28,15 @@ spring:
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      # This template publishes a run request (RunService) and a dead letter (KafkaConsumerConfig); the outbox has its
+      # own producer with the same bounds (KafkaOutboxSender). Kafka's defaults (60 s metadata wait, 120 s delivery)
+      # would hold a Run's Tomcat thread for a minute and answer 504 instead of a prompt 500 while Kafka is away
+      # (Run code design §7: a run that cannot be published fails at once). A dead letter that fails is delivered and
+      # recovered again, as before.
+      properties:
+        max.block.ms: 5000
+        request.timeout.ms: 5000
+        delivery.timeout.ms: 10000
     consumer:
       group-id: judge-api-results
       auto-offset-reset: earliest

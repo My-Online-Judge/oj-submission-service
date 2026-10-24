@@ -68,4 +68,21 @@ public class KafkaTopicConfig {
                 .replicas(1)
                 .build();
     }
+
+    // The Run lane (Run code design §7), keyed by runId: the run-workers read the first, this service the second.
+    @Bean
+    public NewTopic runRequestedTopic() {
+        return TopicBuilder.name(KafkaTopics.RUN_REQUESTED)
+                .partitions(partitions)
+                .replicas(1)
+                .build();
+    }
+
+    @Bean
+    public NewTopic runJudgedTopic() {
+        return TopicBuilder.name(KafkaTopics.RUN_JUDGED)
+                .partitions(partitions)
+                .replicas(1)
+                .build();
+    }
 }

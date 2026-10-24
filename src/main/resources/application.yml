@@ -129,6 +129,18 @@ oj:
     connect-timeout: 500ms
   submission:
     cooldown-seconds: ${SUBMISSION_COOLDOWN_SECONDS:10}
+  # The Run lane (docs/superpowers/specs/2026-10-24-run-code-design.md §5, §6): POST /submissions/run.
+  run:
+    max-cases: 6
+    max-case-bytes: 65536
+    max-event-bytes: 900000
+    cooldown-seconds: ${RUN_COOLDOWN_SECONDS:3}
+    # Runs this instance keeps waiting at once; a run-worker replica judges one run at a time, so keep this around
+    # replicas × 10 (two replicas by default).
+    max-inflight: ${RUN_MAX_INFLIGHT:20}
+    # From publish to the worker's reply, then 504 RUN_TIMED_OUT. Just above the worst case the worker allows (30 s
+    # judge timeout; a checker's first compile on a sandbox adds up to 20 s and may exceed it).
+    timeout: ${RUN_TIMEOUT:45s}
   outbox:
     # Rows are normally sent right after their commit; this poll only retries what that dispatch could not send.
     poll-interval-ms: ${OUTBOX_POLL_INTERVAL_MS:10000}

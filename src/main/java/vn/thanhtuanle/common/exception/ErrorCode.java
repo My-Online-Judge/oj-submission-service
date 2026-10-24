@@ -41,6 +41,13 @@ public enum ErrorCode implements ErrorCodeSpec {
     STREAMS_FULL("Too many verdict streams are open, try again in a moment", HttpStatus.SERVICE_UNAVAILABLE),
     SUBMISSION_NOT_FINISHED("This submission is still being judged", HttpStatus.CONFLICT),
     CONTEST_NOT_RUNNING("Contest is not running", HttpStatus.BAD_REQUEST),
+    // Run (docs/superpowers/specs/2026-10-24-run-code-design.md §5, §6).
+    RUN_RATE_LIMITED("You are running code too fast. Try again in a moment", HttpStatus.TOO_MANY_REQUESTS),
+    RUN_IN_PROGRESS("You already have a run in progress", HttpStatus.TOO_MANY_REQUESTS),
+    RUN_BUSY("The run lane is busy, try again in a moment", HttpStatus.SERVICE_UNAVAILABLE),
+    RUN_TIMED_OUT("Your run took too long to answer. Try again", HttpStatus.GATEWAY_TIMEOUT),
+    // A problem without a published test-case bundle (a draft): the client's condition, not a server fault.
+    PROBLEM_NOT_JUDGEABLE("This problem has no test data yet", HttpStatus.CONFLICT),
     UNCATEGORIZED_EXCEPTION("Uncategorized error", HttpStatus.INTERNAL_SERVER_ERROR);
 
     private final String message;

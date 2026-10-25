@@ -60,11 +60,14 @@ public class GrpcProblemCatalog implements ProblemCatalog {
     }
 
     @Override
-    public JudgeSpec judgeSpec(String slug, boolean allowInactive, String contestSlug) {
+    public JudgeSpec judgeSpec(String slug, boolean allowInactive, String contestSlug, UUID userId) {
         GetJudgeSpecRequest.Builder builder = GetJudgeSpecRequest.newBuilder().setProblemSlug(slug)
                 .setAllowInactive(allowInactive);
         if (contestSlug != null) {
             builder.setContestSlug(contestSlug);
+        }
+        if (userId != null) {
+            builder.setUserId(userId.toString());
         }
         GetJudgeSpecRequest request = builder.build();
         try {
@@ -81,6 +84,9 @@ public class GrpcProblemCatalog implements ProblemCatalog {
                 case FAILED_PRECONDITION -> {
                     if (ProblemRpcReasons.isContestNotRunning(e)) {
                         throw new AppException(ErrorCode.CONTEST_NOT_RUNNING);
+                    }
+                    if (ProblemRpcReasons.isNotEnrolled(e)) {
+                        throw new AppException(ErrorCode.CONTEST_NOT_ENROLLED);
                     }
                     String description = e.getStatus().getDescription();
                     if (description != null && description.startsWith(CHECKER_SOURCE_MISSING)) {

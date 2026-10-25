@@ -24,6 +24,8 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.when;
@@ -66,7 +68,7 @@ class SubmitTransactionBoundaryTest extends PostgresTest {
     @Test
     void noTransactionIsOpenDuringTheGrpcAndRedisCalls() {
         List<Boolean> seen = new ArrayList<>();
-        when(problemCatalog.judgeSpec("a-plus-b", false, null)).thenAnswer(inv -> {
+        when(problemCatalog.judgeSpec(eq("a-plus-b"), eq(false), isNull(), any())).thenAnswer(inv -> {
             seen.add(TransactionSynchronizationManager.isActualTransactionActive());
             return new JudgeSpec(UUID.randomUUID(), "a-plus-b", 1000, 256L, "abc123def456");
         });
@@ -88,7 +90,7 @@ class SubmitTransactionBoundaryTest extends PostgresTest {
 
     @Test
     void theJudgeRequestOfASubmitIsGenerationZero() {
-        when(problemCatalog.judgeSpec("a-plus-b", false, null))
+        when(problemCatalog.judgeSpec(eq("a-plus-b"), eq(false), isNull(), any()))
                 .thenReturn(new JudgeSpec(UUID.randomUUID(), "a-plus-b", 1000, 256L, "abc123def456"));
 
         var dto = submissionService.submit(SubmissionRequestDto.builder()

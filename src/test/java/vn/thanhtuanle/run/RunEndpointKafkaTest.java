@@ -37,6 +37,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
@@ -77,7 +78,7 @@ class RunEndpointKafkaTest extends PostgresTest {
 
     @BeforeEach
     void fakeWorker() {
-        when(problemCatalog.judgeSpec(eq("a-plus-b"), anyBoolean(), isNull()))
+        when(problemCatalog.judgeSpec(eq("a-plus-b"), anyBoolean(), isNull(), any()))
                 .thenReturn(new JudgeSpec(UUID.randomUUID(), "a-plus-b", 1000, 256L, "v1"));
         // What kafka-python sends: UTF-8 key and JSON value, no Spring __TypeId__ header.
         producerFactory = new DefaultKafkaProducerFactory<>(KafkaTestUtils.producerProps(broker),

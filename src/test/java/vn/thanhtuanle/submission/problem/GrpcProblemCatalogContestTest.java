@@ -166,4 +166,28 @@ class GrpcProblemCatalogContestTest {
             }
         }
     }
+
+    @Test
+    void notEnrolledIs403() {
+        problems.failure = Status.FAILED_PRECONDITION.withDescription("Not enrolled in contest")
+                .asRuntimeException(ProblemRpcReasons.notEnrolled());
+
+        assertThatThrownBy(() -> catalog.judgeSpec("a-plus-b", false, "icpc-1", UUID.randomUUID()))
+                .isInstanceOfSatisfying(AppException.class,
+                        e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.CONTEST_NOT_ENROLLED));
+        assertThat(ErrorCode.CONTEST_NOT_ENROLLED.getStatusCode().value()).isEqualTo(403);
+        assertThat(problems.calls).as("an answer, not retried").hasValue(1);
+    }
+
+    @Test
+    void theUserIdTravels() {
+        problems.answer = spec().setContestId(CONTEST_ID.toString()).build();
+        UUID uid = UUID.randomUUID();
+
+        catalog.judgeSpec("a-plus-b", false, "icpc-1", uid);
+        assertThat(problems.lastRequest.getUserId()).isEqualTo(uid.toString());
+
+        catalog.judgeSpec("a-plus-b", false, "icpc-1");
+        assertThat(problems.lastRequest.getUserId()).isEmpty();
+    }
 }

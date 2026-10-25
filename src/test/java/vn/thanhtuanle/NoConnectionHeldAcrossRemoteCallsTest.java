@@ -43,6 +43,8 @@ import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.when;
@@ -174,7 +176,7 @@ class NoConnectionHeldAcrossRemoteCallsTest extends PostgresTest {
 
     @Test
     void aSubmitHoldsNoConnectionDuringTheProblemCallOrTheCooldown() throws Exception {
-        when(catalog.judgeSpec(slug, false, null)).thenAnswer(inv -> {
+        when(catalog.judgeSpec(eq(slug), eq(false), isNull(), any())).thenAnswer(inv -> {
             probe();
             return new JudgeSpec(UUID.randomUUID(), slug, 1000, 256L, "abc123def456");
         });

@@ -65,7 +65,8 @@ public class RunService {
 
         // Resolved first — limits, the checker and the contest included — so neither an unknown problem, one that
         // cannot be judged, a contest that is not running nor an unknown language burns the cooldown below.
-        JudgeSpec spec = problemCatalog.judgeSpec(req.getProblemSlug(), mayEditProblems(), req.getContestSlug());
+        UUID userId = currentUser.id();
+        JudgeSpec spec = problemCatalog.judgeSpec(req.getProblemSlug(), mayEditProblems(), req.getContestSlug(), userId);
         Language language = languageRepository.findByIdentifier(req.getLanguageIdentifier())
                 .filter(l -> !l.isDisabled())
                 .orElseThrow(() -> new ResourceNotFoundException("Language not found"));
@@ -73,7 +74,6 @@ public class RunService {
         boolean checker = spec.spjVersion() != null;
         List<Boolean> hasExpected = cases.stream().map(c -> c.getExpectedOutput() != null).toList();
 
-        UUID userId = currentUser.id();
         rateLimiter.acquire(userId);
         UUID runId = null;
         try {

@@ -42,6 +42,7 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -89,7 +90,7 @@ class RunServiceTest {
         req = RunRequestDto.builder().problemSlug("a-plus-b").languageIdentifier("cpp").sourceCode("int main(){}")
                 .cases(List.of(new RunCaseDto("4\n", "1\n"), new RunCaseDto("2\n", null))).build();
 
-        when(problemCatalog.judgeSpec("a-plus-b", false, null))
+        when(problemCatalog.judgeSpec(eq("a-plus-b"), eq(false), isNull(), any()))
                 .thenReturn(new JudgeSpec(PROBLEM_ID, "a-plus-b", 1000, 256L, "v1"));
         when(languageRepository.findByIdentifier("cpp")).thenReturn(Optional.of(new Language()));
         when(currentUser.id()).thenReturn(userId);
@@ -122,7 +123,7 @@ class RunServiceTest {
 
     @Test
     void aCheckerProblemSendsCasesWithoutOutput() {
-        when(problemCatalog.judgeSpec("a-plus-b", false, null)).thenReturn(
+        when(problemCatalog.judgeSpec(eq("a-plus-b"), eq(false), isNull(), any())).thenReturn(
                 new JudgeSpec(PROBLEM_ID, "a-plus-b", 1000, 256L, "v1", null, "int main(){return 0;}", "ab12"));
         when(checkerLanguages.forSpec(any())).thenReturn(new Language());
 
@@ -133,7 +134,7 @@ class RunServiceTest {
 
     @Test
     void anUnknownProblemBurnsNoCooldownAndRegistersNothing() {
-        when(problemCatalog.judgeSpec("a-plus-b", false, null)).thenThrow(new ProblemNotFoundException());
+        when(problemCatalog.judgeSpec(eq("a-plus-b"), eq(false), isNull(), any())).thenThrow(new ProblemNotFoundException());
 
         assertThatThrownBy(() -> service.run(req)).isInstanceOf(ProblemNotFoundException.class);
 
@@ -203,5 +204,12 @@ class RunServiceTest {
         assertThat(registry.inflight()).isZero();
         verify(rateLimiter).release(userId);
         verify(kafkaTemplate, never()).send(anyString(), anyString(), any());
+    }
+
+    @Test
+    void theSubmitterIsNamedOnTheJudgeSpecCall() {
+        service.run(req);
+
+        verify(problemCatalog).judgeSpec("a-plus-b", false, null, userId);
     }
 }

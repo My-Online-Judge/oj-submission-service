@@ -81,12 +81,14 @@ public class SubmissionService {
         try {
             // Resolved first — limits, the bundle version and the contest included — so neither an unknown problem,
             // one that cannot be judged, nor a contest that is not running burns the cooldown below.
-            JudgeSpec spec = problemCatalog.judgeSpec(req.getProblemSlug(), mayEditProblems(), req.getContestSlug());
+            // The submitter's id is a claim of the token: cheap, and a contest that requires registration needs it.
+            UUID userId = currentUser.id();
+            JudgeSpec spec = problemCatalog.judgeSpec(req.getProblemSlug(), mayEditProblems(), req.getContestSlug(),
+                    userId);
             Language language = languageRepository.findByIdentifier(req.getLanguageIdentifier())
                     .filter(l -> !l.isDisabled())
                     .orElseThrow(() -> new ResourceNotFoundException("Language not found"));
             Language checkerLanguage = checkerLanguages.forSpec(spec);
-            UUID userId = currentUser.id();
 
             // Cooldown gate: sits after problem/language/user resolve so a 404 never burns it,
             // and before the row exists so a throttled submit leaves no trace.

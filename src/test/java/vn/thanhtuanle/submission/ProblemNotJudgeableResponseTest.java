@@ -17,6 +17,7 @@ import java.util.UUID;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -38,7 +39,7 @@ class ProblemNotJudgeableResponseTest {
 
     @Test
     void aSubmitForAProblemWithoutTestDataIs409() throws Exception {
-        when(problemCatalog.judgeSpec(eq("draft"), anyBoolean(), isNull()))
+        when(problemCatalog.judgeSpec(eq("draft"), anyBoolean(), isNull(), any()))
                 .thenThrow(new ProblemNotJudgeableException("draft"));
 
         mockMvc.perform(post("/api/v1/submissions")

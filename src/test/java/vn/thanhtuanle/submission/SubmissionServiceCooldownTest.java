@@ -41,6 +41,8 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -73,7 +75,7 @@ class SubmissionServiceCooldownTest {
         req.setLanguageIdentifier("python3");
         req.setProblemSlug("simple-a-plus-b");
 
-        when(problemCatalog.judgeSpec("simple-a-plus-b", false, null))
+        when(problemCatalog.judgeSpec(eq("simple-a-plus-b"), eq(false), isNull(), any()))
                 .thenReturn(new JudgeSpec(UUID.randomUUID(), "simple-a-plus-b", 1000, 256L, "abc123def456"));
         when(languageRepository.findByIdentifier("python3")).thenReturn(Optional.of(new Language()));
         when(currentUser.id()).thenReturn(userId);
@@ -95,7 +97,7 @@ class SubmissionServiceCooldownTest {
 
     @Test
     void unknownProblem_doesNotBurnTheCooldown() {
-        when(problemCatalog.judgeSpec("simple-a-plus-b", false, null)).thenThrow(new ProblemNotFoundException());
+        when(problemCatalog.judgeSpec(eq("simple-a-plus-b"), eq(false), isNull(), any())).thenThrow(new ProblemNotFoundException());
         assertThatThrownBy(() -> service.submit(req)).isInstanceOf(ResourceNotFoundException.class);
         verify(submissionRateLimiter, never()).acquire(any());
     }
@@ -103,7 +105,7 @@ class SubmissionServiceCooldownTest {
     @Test
     void aProblemThatCannotBeJudgedDoesNotBurnTheCooldown() {
         // Before 2a the bundle version was read after the cooldown: a missing bundle cost the user a turn.
-        when(problemCatalog.judgeSpec("simple-a-plus-b", false, null))
+        when(problemCatalog.judgeSpec(eq("simple-a-plus-b"), eq(false), isNull(), any()))
                 .thenThrow(new IllegalStateException("No published test-case bundle"));
         assertThatThrownBy(() -> service.submit(req)).isInstanceOf(IllegalStateException.class);
         verify(submissionRateLimiter, never()).acquire(any());
@@ -111,7 +113,7 @@ class SubmissionServiceCooldownTest {
 
     @Test
     void problemsUnavailable_doesNotBurnTheCooldown() {
-        when(problemCatalog.judgeSpec("simple-a-plus-b", false, null)).thenThrow(new ProblemCatalogUnavailableException());
+        when(problemCatalog.judgeSpec(eq("simple-a-plus-b"), eq(false), isNull(), any())).thenThrow(new ProblemCatalogUnavailableException());
         assertThatThrownBy(() -> service.submit(req)).isInstanceOf(ProblemCatalogUnavailableException.class);
         verify(submissionRateLimiter, never()).acquire(any());
     }
@@ -147,5 +149,12 @@ class SubmissionServiceCooldownTest {
         assertThatThrownBy(() -> service.submit(req)).isInstanceOf(RateLimitedException.class);
         verify(submissionRepository, never()).save(any());
         verify(outboxWriter, never()).append(any(), any(), any());
+    }
+
+    @Test
+    void theSubmitterIsNamedOnTheJudgeSpecCall() {
+        service.submit(req);
+
+        verify(problemCatalog).judgeSpec("simple-a-plus-b", false, null, userId);
     }
 }

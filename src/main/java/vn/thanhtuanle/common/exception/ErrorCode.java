@@ -41,6 +41,8 @@ public enum ErrorCode implements ErrorCodeSpec {
     STREAMS_FULL("Too many verdict streams are open, try again in a moment", HttpStatus.SERVICE_UNAVAILABLE),
     SUBMISSION_NOT_FINISHED("This submission is still being judged", HttpStatus.CONFLICT),
     CONTEST_NOT_RUNNING("Contest is not running", HttpStatus.BAD_REQUEST),
+    // Contest enrollment design §4.5: the contest requires registration and the submitter is not registered.
+    CONTEST_NOT_ENROLLED("Register for this contest to submit", HttpStatus.FORBIDDEN),
     // Run (docs/superpowers/specs/2026-10-24-run-code-design.md §5, §6).
     RUN_RATE_LIMITED("You are running code too fast. Try again in a moment", HttpStatus.TOO_MANY_REQUESTS),
     RUN_IN_PROGRESS("You already have a run in progress", HttpStatus.TOO_MANY_REQUESTS),

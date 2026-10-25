@@ -22,6 +22,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -54,7 +56,7 @@ class ContestSubmitErrorCodeTest {
 
     @Test
     void aContestSubmitOutsideTheWindowIs400WithItsCode() throws Exception {
-        when(problemCatalog.judgeSpec(anyString(), anyBoolean(), any()))
+        when(problemCatalog.judgeSpec(anyString(), anyBoolean(), any(), any()))
                 .thenThrow(new AppException(ErrorCode.CONTEST_NOT_RUNNING));
 
         submit("ended")
@@ -77,12 +79,40 @@ class ContestSubmitErrorCodeTest {
 
     @Test
     void unavailableProblemsAre503WithCodeAndRetryAfter() throws Exception {
-        when(problemCatalog.judgeSpec(anyString(), anyBoolean(), any()))
+        when(problemCatalog.judgeSpec(anyString(), anyBoolean(), any(), any()))
                 .thenThrow(new ProblemCatalogUnavailableException());
 
         submit(null)
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(header().string("Retry-After", "5"))
                 .andExpect(jsonPath("$.code").value("PROBLEMS_UNAVAILABLE"));
+    }
+
+    // ---- registration (contest enrollment design §4.5) -----------------------------------------------------------
+
+    @Test
+    void aContestSubmitWithoutRegistrationIs403WithItsCode() throws Exception {
+        when(problemCatalog.judgeSpec(anyString(), anyBoolean(), any(), any()))
+                .thenThrow(new AppException(ErrorCode.CONTEST_NOT_ENROLLED));
+
+        submit("icpc-1")
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("CONTEST_NOT_ENROLLED"))
+                .andExpect(jsonPath("$.message").value("Register for this contest to submit"));
+    }
+
+    @Test
+    void aContestRunWithoutRegistrationIs403() throws Exception {
+        when(problemCatalog.judgeSpec(anyString(), anyBoolean(), any(), any()))
+                .thenThrow(new AppException(ErrorCode.CONTEST_NOT_ENROLLED));
+
+        mockMvc.perform(post("/api/v1/submissions/run")
+                        .with(jwt().jwt(token -> token.claim(OjJwtDecoders.UID_CLAIM, UUID.randomUUID().toString())))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sourceCode\": \"int main(){}\", \"languageIdentifier\": \"cpp\", "
+                                + "\"problemSlug\": \"a-plus-b\", \"contestSlug\": \"icpc-1\", "
+                                + "\"cases\": [{\"input\": \"1 2\\n\"}]}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("CONTEST_NOT_ENROLLED"));
     }
 }

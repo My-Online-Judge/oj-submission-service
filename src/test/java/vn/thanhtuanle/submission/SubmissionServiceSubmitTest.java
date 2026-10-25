@@ -80,7 +80,7 @@ class SubmissionServiceSubmitTest {
     }
 
     private void submitTo(String slug) {
-        when(problemCatalog.judgeSpec(eq(slug), anyBoolean(), isNull())).thenThrow(new ProblemNotFoundException());
+        when(problemCatalog.judgeSpec(eq(slug), anyBoolean(), isNull(), any())).thenThrow(new ProblemNotFoundException());
         assertThatThrownBy(() -> submissionService.submit(SubmissionRequestDto.builder()
                 .sourceCode("int main(){}").languageIdentifier("cpp").problemSlug(slug).build()))
                 .isInstanceOf(ProblemNotFoundException.class);
@@ -90,14 +90,14 @@ class SubmissionServiceSubmitTest {
     void problemEditorsMayJudgeInactiveProblems() {
         signInWith("problem:update");
         submitTo("hidden");
-        verify(problemCatalog).judgeSpec("hidden", true, null);
+        verify(problemCatalog).judgeSpec(eq("hidden"), eq(true), isNull(), any());
     }
 
     @Test
     void ordinaryUsersCannot() {
         signInWith("submission:read-any", "problem:read");
         submitTo("hidden");
-        verify(problemCatalog).judgeSpec("hidden", false, null);
+        verify(problemCatalog).judgeSpec(eq("hidden"), eq(false), isNull(), any());
     }
 
     @Test
@@ -110,7 +110,7 @@ class SubmissionServiceSubmitTest {
         Language language = new Language();
         UUID userId = UUID.randomUUID();
 
-        when(problemCatalog.judgeSpec("a-plus-b", false, null)).thenReturn(spec);
+        when(problemCatalog.judgeSpec(eq("a-plus-b"), eq(false), isNull(), any())).thenReturn(spec);
         when(languageRepository.findByIdentifier("cpp")).thenReturn(Optional.of(language));
         when(currentUser.id()).thenReturn(userId);
         // simulate JPA's GenerationType.UUID assigning an id on save(), since a bare Mockito
@@ -175,7 +175,7 @@ class SubmissionServiceSubmitTest {
     @Test
     void aRefusalAfterTheReservationGivesTheSlotBack() {
         // A 404 burns no cooldown, so without the release a stream of them could fill the queue for 5 s.
-        when(problemCatalog.judgeSpec("no-such-problem", false, null)).thenThrow(new ProblemNotFoundException());
+        when(problemCatalog.judgeSpec(eq("no-such-problem"), eq(false), isNull(), any())).thenThrow(new ProblemNotFoundException());
 
         assertThatThrownBy(() -> submissionService.submit(SubmissionRequestDto.builder()
                 .sourceCode("int main(){}").languageIdentifier("cpp").problemSlug("no-such-problem").build()))
@@ -194,7 +194,7 @@ class SubmissionServiceSubmitTest {
         Language disabled = new Language();
         disabled.setDisabled(true);
 
-        when(problemCatalog.judgeSpec("a-plus-b", false, null))
+        when(problemCatalog.judgeSpec(eq("a-plus-b"), eq(false), isNull(), any()))
                 .thenReturn(new JudgeSpec(UUID.randomUUID(), "a-plus-b", 1000, 256L, "abc123def456"));
         when(languageRepository.findByIdentifier("javascript")).thenReturn(Optional.of(disabled));
 
@@ -207,7 +207,7 @@ class SubmissionServiceSubmitTest {
         TransactionOperations mockTransactions = mock(TransactionOperations.class);
         ReflectionTestUtils.setField(submissionService, "transactions", mockTransactions);
         UUID userId = UUID.randomUUID();
-        when(problemCatalog.judgeSpec("a-plus-b", false, null))
+        when(problemCatalog.judgeSpec(eq("a-plus-b"), eq(false), isNull(), any()))
                 .thenReturn(new JudgeSpec(UUID.randomUUID(), "a-plus-b", 1000, 256L, "abc123def456"));
         when(languageRepository.findByIdentifier("cpp")).thenReturn(Optional.of(new Language()));
         when(currentUser.id()).thenReturn(userId);
@@ -225,7 +225,7 @@ class SubmissionServiceSubmitTest {
     void contestSubmissionStoresContestId() {
         UUID contestId = UUID.randomUUID();
         JudgeSpec spec = new JudgeSpec(UUID.randomUUID(), "a-plus-b", 1000, 256L, "abc123def456", contestId);
-        when(problemCatalog.judgeSpec("a-plus-b", false, "icpc-1")).thenReturn(spec);
+        when(problemCatalog.judgeSpec(eq("a-plus-b"), eq(false), eq("icpc-1"), any())).thenReturn(spec);
         when(languageRepository.findByIdentifier("cpp")).thenReturn(Optional.of(new Language()));
         when(currentUser.id()).thenReturn(UUID.randomUUID());
         when(submissionRepository.save(any(Submission.class))).thenAnswer(inv -> {
@@ -261,7 +261,7 @@ class SubmissionServiceSubmitTest {
         JudgeSpec spec = checkerSpec();
         Language python = language("python3");
         Language cpp = language("cpp");
-        when(problemCatalog.judgeSpec("special", false, null)).thenReturn(spec);
+        when(problemCatalog.judgeSpec(eq("special"), eq(false), isNull(), any())).thenReturn(spec);
         when(languageRepository.findByIdentifier("python3")).thenReturn(Optional.of(python));
         when(languageRepository.findByIdentifier("cpp")).thenReturn(Optional.of(cpp));
         when(currentUser.id()).thenReturn(UUID.randomUUID());
@@ -282,7 +282,7 @@ class SubmissionServiceSubmitTest {
     @Test
     void submitOfACheckerProblemWithoutCppFails() {
         ReflectionTestUtils.setField(submissionService, "checkerLanguages", new CheckerLanguages(languageRepository));
-        when(problemCatalog.judgeSpec("special", false, null)).thenReturn(checkerSpec());
+        when(problemCatalog.judgeSpec(eq("special"), eq(false), isNull(), any())).thenReturn(checkerSpec());
         when(languageRepository.findByIdentifier("python3")).thenReturn(Optional.of(language("python3")));
         when(languageRepository.findByIdentifier("cpp")).thenReturn(Optional.empty());
 
@@ -299,7 +299,7 @@ class SubmissionServiceSubmitTest {
 
     @Test
     void contestNotRunningIsRefusedBeforeTheCooldown() {
-        when(problemCatalog.judgeSpec("a-plus-b", false, "ended"))
+        when(problemCatalog.judgeSpec(eq("a-plus-b"), eq(false), eq("ended"), any()))
                 .thenThrow(new AppException(ErrorCode.CONTEST_NOT_RUNNING));
 
         assertThatThrownBy(() -> submissionService.submit(SubmissionRequestDto.builder()

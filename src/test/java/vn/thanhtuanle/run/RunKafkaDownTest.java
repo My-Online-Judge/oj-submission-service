@@ -17,6 +17,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
@@ -48,7 +49,7 @@ class RunKafkaDownTest extends PostgresTest {   // Postgres: Flyway seeds the la
 
     @Test
     void aRunWhileKafkaIsDownIs500WithinSecondsAndFreesItsSlot() throws Exception {
-        when(problemCatalog.judgeSpec(eq("a-plus-b"), anyBoolean(), isNull()))
+        when(problemCatalog.judgeSpec(eq("a-plus-b"), anyBoolean(), isNull(), any()))
                 .thenReturn(new JudgeSpec(UUID.randomUUID(), "a-plus-b", 1000, 256L, "v1"));
         UUID user = UUID.randomUUID();
 

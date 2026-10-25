@@ -18,16 +18,27 @@ public interface ProblemCatalog {
      * @param allowInactive true lets an INACTIVE problem be judged (problem editors, rejudges)
      * @param contestSlug   the contest the submission is made in, or null for practice; the spec then carries the
      *                      contest's id
+     * @param userId        the submitter, for a contest that requires registration (contest enrollment design §4.4);
+     *                      null for a rejudge
      * @throws ProblemNotFoundException           unknown or deleted slug (404)
      * @throws ProblemCatalogUnavailableException problems cannot be reached right now (503)
      * @throws AppException                       {@code CONTEST_NOT_RUNNING} (400): the contest is not running or
-     *                                            does not contain the problem
+     *                                            does not contain the problem; {@code CONTEST_NOT_ENROLLED} (403):
+     *                                            the contest requires registration and {@code userId} is not registered
      */
-    JudgeSpec judgeSpec(String slug, boolean allowInactive, String contestSlug);
+    JudgeSpec judgeSpec(String slug, boolean allowInactive, String contestSlug, UUID userId);
+
+    /**
+     * Without a submitter (a rejudge, which names no user). A contest that requires registration then refuses the
+     * request: a rejudge never names a contest.
+     */
+    default JudgeSpec judgeSpec(String slug, boolean allowInactive, String contestSlug) {
+        return judgeSpec(slug, allowInactive, contestSlug, null);
+    }
 
     /** Outside any contest. */
     default JudgeSpec judgeSpec(String slug, boolean allowInactive) {
-        return judgeSpec(slug, allowInactive, null);
+        return judgeSpec(slug, allowInactive, null, null);
     }
 
     /**

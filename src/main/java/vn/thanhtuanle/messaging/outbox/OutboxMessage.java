@@ -45,4 +45,16 @@ public class OutboxMessage {
     /** Null until the broker acknowledged the record. */
     @Column(name = "published_at")
     private LocalDateTime publishedAt;
+
+    /** The relay instance sending this row owns it until then; null when nobody does. */
+    @Column(name = "claimed_until")
+    private LocalDateTime claimedUntil;
+
+    /** How many times the broker refused the record for good; a failure that may heal is not counted. */
+    @Column(nullable = false)
+    private int attempts;
+
+    /** Set when {@link #attempts} reached the limit: the row is never sent again. */
+    @Column(name = "dead_at")
+    private LocalDateTime deadAt;
 }

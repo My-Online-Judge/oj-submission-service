@@ -8,6 +8,10 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -20,6 +24,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * context onto that thread, so the record continues the request's trace. Rows a dispatch could not send
  * — Kafka down, or a crash between the commit and the send — are picked up by {@link #poll}.
  *
+ * <p>A pass sends outside a database transaction and records each row's outcome on its own (see {@link #relayBatch}).
+ * Two instances are kept apart by a lease on each claimed row, taken with {@code SKIP LOCKED}.
+ *
  * <p>At most one dispatched pass waits at a time: a problem rejudge calls {@link #relaySoon} once per queued
  * submission, and one pass sends them all.
  */
@@ -31,7 +38,8 @@ public class OutboxRelay {
     private final OutboxSender sender;
     private final TransactionTemplate transaction;
     private final OutboxProperties props;
-    // One thread: passes of this instance never overlap. Other instances are kept apart by SKIP LOCKED.
+    // One thread: dispatched passes of this instance never overlap. Other instances (and the poll) are kept apart by the
+    // lease on each claimed row.
     private final ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "outbox-relay");
         t.setDaemon(true);
@@ -83,27 +91,58 @@ public class OutboxRelay {
     }
 
     /**
-     * Sends up to one batch of the oldest unpublished rows and marks each sent row published, all in one
-     * transaction. Stops at the first failure: that row and the later ones wait for the next pass.
+     * Claims up to one batch of the oldest sendable rows (a short transaction, then a lease), sends them oldest first
+     * <em>outside</em> any database transaction, and records each outcome in a statement of its own. A transaction held
+     * open across the sends would keep every row lock for as long as Kafka takes (15 s per row).
+     * <ul>
+     *   <li>Sent: marked published.</li>
+     *   <li>Refused for good ({@link OutboxFailures#isPermanent}): counted, kept away for a backoff, and dead after
+     *       {@code maxAttempts}; the rows behind it are still sent.</li>
+     *   <li>Failed in a way that may heal (Kafka down): this row and every one not yet tried are given back at once,
+     *       uncounted, and the pass stops; the next pass retries them in order.</li>
+     * </ul>
      *
      * @return how many rows were sent
      */
     int relayBatch() {
-        Integer sent = transaction.execute(status -> {
-            int count = 0;
-            for (OutboxMessage message : repository.lockOldestUnpublished(props.getBatchSize())) {
-                try {
-                    sender.send(message);
-                } catch (Exception e) {
-                    log.warn("Outbox message {} to {} not sent yet: {}", message.getId(), message.getTopic(), e.getMessage());
-                    break;
+        LocalDateTime claimedAt = LocalDateTime.now();
+        List<OutboxMessage> claimed = transaction.execute(status -> repository.claim(
+                props.getBatchSize(), claimedAt, claimedAt.plusSeconds(props.getLeaseSeconds())));
+        if (claimed == null || claimed.isEmpty()) {
+            return 0;
+        }
+        // RETURNING gives no order, and the oldest row goes first.
+        List<OutboxMessage> inOrder = new ArrayList<>(claimed);
+        inOrder.sort(Comparator.comparing(OutboxMessage::getCreatedAt));
+        int sent = 0;
+        for (int i = 0; i < inOrder.size(); i++) {
+            OutboxMessage message = inOrder.get(i);
+            try {
+                sender.send(message);
+            } catch (Exception e) {
+                if (OutboxFailures.isPermanent(e)) {
+                    refuse(message, e);
+                    continue;
                 }
-                message.setPublishedAt(LocalDateTime.now());
-                count++;
+                log.warn("Outbox message {} to {} not sent yet: {}", message.getId(), message.getTopic(), e.getMessage());
+                List<UUID> untried = inOrder.subList(i, inOrder.size()).stream().map(OutboxMessage::getId).toList();
+                transaction.executeWithoutResult(status -> repository.releaseClaims(untried));
+                break;
             }
-            return count;
-        });
-        return sent == null ? 0 : sent;
+            transaction.executeWithoutResult(status -> repository.markPublished(message.getId(), LocalDateTime.now()));
+            sent++;
+        }
+        return sent;
+    }
+
+    private void refuse(OutboxMessage message, Exception failure) {
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime retryAt = now.plusSeconds((long) props.getRetryBackoffSeconds() * (message.getAttempts() + 1));
+        transaction.executeWithoutResult(status ->
+                repository.markRefused(message.getId(), props.getMaxAttempts(), now, retryAt));
+        boolean dead = message.getAttempts() + 1 >= props.getMaxAttempts();
+        log.error("Outbox message {} to {} refused for good ({} of {}){}: {}", message.getId(), message.getTopic(),
+                message.getAttempts() + 1, props.getMaxAttempts(), dead ? "; given up on it" : "", failure.toString());
     }
 
     /** Published rows are only kept for a while, for debugging. */

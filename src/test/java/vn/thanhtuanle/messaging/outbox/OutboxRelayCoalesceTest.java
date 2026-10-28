@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -15,7 +16,9 @@ import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -28,7 +31,7 @@ import static org.mockito.Mockito.when;
 class OutboxRelayCoalesceTest {
 
     private final List<OutboxMessage> rows = IntStream.range(0, 3)
-            .mapToObj(i -> OutboxMessage.builder().topic("t").messageKey("m" + i)
+            .mapToObj(i -> OutboxMessage.builder().id(UUID.randomUUID()).topic("t").messageKey("m" + i)
                     .payload(("m" + i).getBytes(StandardCharsets.UTF_8)).createdAt(LocalDateTime.now()).build())
             .toList();
 
@@ -41,10 +44,15 @@ class OutboxRelayCoalesceTest {
         // Fewer rows than a batch: each pass locks once, so the lock calls count the passes.
         AtomicInteger passes = new AtomicInteger();
         OutboxRepository repository = mock(OutboxRepository.class);
-        when(repository.lockOldestUnpublished(anyInt())).thenAnswer(call -> {
+        when(repository.claim(anyInt(), any(), any())).thenAnswer(call -> {
             passes.incrementAndGet();
             return unpublished(call.getArgument(0));
         });
+        doAnswer(call -> {
+            rows.stream().filter(m -> m.getId().equals(call.getArgument(0)))
+                    .forEach(m -> m.setPublishedAt(call.getArgument(1)));
+            return 1;
+        }).when(repository).markPublished(any(), any());
         CountDownLatch sending = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
         AtomicBoolean first = new AtomicBoolean(true);

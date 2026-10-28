@@ -62,7 +62,7 @@ class SubmissionSchemaTest {
     @Test
     void submissionDbHoldsTheFourSubmissionTablesAndTheLanguages() {
         assertThat(jdbc.queryForList("SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank",
-                String.class)).containsExactly("1", "2", "3", "4", "5", "6", "7");
+                String.class)).containsExactly("1", "2", "3", "4", "5", "6", "7", "8");
         assertThat(jdbc.queryForList("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' "
                 + "ORDER BY table_name", String.class))
                 .containsExactly("flyway_schema_history", "t_judge_servers", "t_languages", "t_outbox", "t_submissions");

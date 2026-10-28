@@ -28,8 +28,22 @@ class OutboxMetricsTest {
 
     @Test
     void aFailingQueryReadsAsNoDataNotAsZero() {
-        when(repository.countByPublishedAtIsNull()).thenThrow(new IllegalStateException("database down"));
+        when(repository.countPending()).thenThrow(new IllegalStateException("database down"));
 
         assertThat(OutboxMetrics.pending(repository)).isNaN();
+    }
+
+    @Test
+    void deadRowsAreCountedSeparately() {
+        when(repository.countDead()).thenReturn(2L);
+
+        assertThat(OutboxMetrics.dead(repository)).isEqualTo(2.0);
+    }
+
+    @Test
+    void aFailingDeadQueryReadsAsNoData() {
+        when(repository.countDead()).thenThrow(new IllegalStateException("database down"));
+
+        assertThat(OutboxMetrics.dead(repository)).isNaN();
     }
 }

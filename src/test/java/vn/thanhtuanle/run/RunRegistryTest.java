@@ -36,7 +36,7 @@ class RunRegistryTest {
 
     private static RunJudgedEvent reply(String runId) {
         JudgeResultDto one = JudgeResultDto.builder().testCase("1").result(0).error(0).cpuTime(1).memory(1L).build();
-        return new RunJudgedEvent(runId, 0, 0, 1, 1, 1L, null, List.of(one));
+        return new RunJudgedEvent(runId, 0, 0, 1, 1, 1L, null, List.of(one), null);
     }
 
     @Test

@@ -132,6 +132,7 @@ public class RunService {
                         checker ? null : (c.getExpectedOutput() == null ? "" : c.getExpectedOutput())))
                 .toList();
         RunRequestedEvent event = RunRequestedEvent.from(template, runId.toString(), expiresAt, testCases);
+        event.setReplyTo(props.getInstanceId());
         int bytes;
         try {
             bytes = objectMapper.writeValueAsBytes(event).length;

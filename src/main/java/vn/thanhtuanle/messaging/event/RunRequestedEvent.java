@@ -27,6 +27,9 @@ public class RunRequestedEvent {
     /** Epoch milliseconds: publish time plus the wait. judge-worker skips a run it picks up after this. */
     private Long expiresAt;
 
+    /** The submission-service instance that asked; judge-worker echoes it on run.judged so only that instance answers. */
+    private String replyTo;
+
     private String src;
 
     @JsonProperty("language_config")

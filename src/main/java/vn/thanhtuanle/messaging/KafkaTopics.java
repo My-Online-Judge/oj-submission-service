@@ -14,5 +14,6 @@ public final class KafkaTopics {
     // their replies, read by this service's run-results group. Nothing on either topic names a submission.
     public static final String RUN_REQUESTED = "run.requested";
     public static final String RUN_JUDGED = "run.judged";
-    public static final String RUN_RESULTS_GROUP = "run-results";
+    /** Each submission-service instance reads run.judged in {@code run-results-<instance>} (RunProperties). */
+    public static final String RUN_RESULTS_GROUP_PREFIX = "run-results-";
 }

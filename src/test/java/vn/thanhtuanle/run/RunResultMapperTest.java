@@ -27,7 +27,7 @@ class RunResultMapperTest {
     }
 
     private static RunJudgedEvent reply(int status, String errorMessage, List<JudgeResultDto> details) {
-        return new RunJudgedEvent("r", status, null, 2, 3, 1839104L, errorMessage, details);
+        return new RunJudgedEvent("r", status, null, 2, 3, 1839104L, errorMessage, details, null);
     }
 
     @Test

@@ -122,6 +122,15 @@ class RunServiceTest {
     }
 
     @Test
+    void theRequestNamesTheInstanceThatAskedSoOnlyItCompletesTheRun() {
+        props.setInstanceId("inst-a");
+
+        service.run(req);
+
+        assertThat(published().getReplyTo()).isEqualTo("inst-a");
+    }
+
+    @Test
     void aCheckerProblemSendsCasesWithoutOutput() {
         when(problemCatalog.judgeSpec(eq("a-plus-b"), eq(false), isNull(), any())).thenReturn(
                 new JudgeSpec(PROBLEM_ID, "a-plus-b", 1000, 256L, "v1", null, "int main(){return 0;}", "ab12"));

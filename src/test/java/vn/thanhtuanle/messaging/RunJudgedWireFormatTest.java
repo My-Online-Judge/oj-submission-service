@@ -53,4 +53,13 @@ class RunJudgedWireFormatTest {
         assertThat(event.errorMessage()).isEqualTo("CompileError: x");
         assertThat(event.details()).isEmpty();
     }
+
+    @Test
+    void theInstanceTheWorkerEchoesIsRead() throws Exception {
+        RunJudgedEvent event = objectMapper.readValue(
+                "{\"runId\": \"r1\", \"status\": 0, \"details\": [], \"replyTo\": \"submission-service-7c9f\"}",
+                RunJudgedEvent.class);
+
+        assertThat(event.replyTo()).isEqualTo("submission-service-7c9f");
+    }
 }

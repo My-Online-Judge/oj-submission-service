@@ -37,6 +37,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
@@ -69,6 +70,7 @@ class RunEndpointKafkaTest extends PostgresTest {
     @Autowired MockMvc mockMvc;
     @Autowired EmbeddedKafkaBroker broker;
     @Autowired ObjectMapper objectMapper;
+    @Autowired RunProperties runProperties;
 
     @MockitoBean ProblemCatalog problemCatalog;
 
@@ -123,6 +125,7 @@ class RunEndpointKafkaTest extends PostgresTest {
         assertThat(body.get("test_case").get(1).get("output").asText()).isEmpty();
         assertThat(body.has("test_case_id")).isFalse();
         assertThat(body.has("submissionId")).isFalse();
+        assertThat(body.get("replyTo").asText()).isEqualTo(runProperties.getInstanceId());
         // No traceparent assertion: the OTel Java agent is not attached in tests; the live stack shows the trace.
 
         worker.send(KafkaTopics.RUN_JUDGED, record.key(), "{\"runId\": \"" + record.key() + "\", \"status\": -1, "
@@ -139,6 +142,23 @@ class RunEndpointKafkaTest extends PostgresTest {
                 .andExpect(jsonPath("$.data.cases[0].output").value("3\n"))
                 .andExpect(jsonPath("$.data.cases[1].result").value(0))      // no expected output: WA → ran
                 .andExpect(jsonPath("$.data.cases[1].output").value("5\n"));
+    }
+
+    @Test
+    void aReplyForAnotherInstanceDoesNotCompleteTheRunButOursDoes() throws Exception {
+        MvcResult started = mockMvc.perform(run(UUID.randomUUID()))
+                .andExpect(request().asyncStarted()).andReturn();
+        ConsumerRecord<String, String> record = nextRequest();
+        String reply = "{\"runId\": \"" + record.key() + "\", \"status\": 0, \"result\": 0, \"cpu_time\": 1, "
+                + "\"real_time\": 1, \"memory\": 1, \"error_message\": null, \"details\": [], \"replyTo\": \"%s\"}";
+
+        worker.send(KafkaTopics.RUN_JUDGED, record.key(), reply.formatted("some-other-instance"));
+        assertThatThrownBy(() -> started.getAsyncResult(3_000)).as("the neighbour's reply is not ours")
+                .isInstanceOf(IllegalStateException.class);
+
+        worker.send(KafkaTopics.RUN_JUDGED, record.key(), reply.formatted(runProperties.getInstanceId()));
+        started.getAsyncResult(30_000);
+        mockMvc.perform(asyncDispatch(started)).andExpect(status().isOk());
     }
 
     @Test

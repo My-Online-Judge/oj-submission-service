@@ -19,7 +19,8 @@ import java.util.Map;
 @Slf4j
 public class JudgeService {
 
-    private static final int MAX_CODE_LENGTH = 10240;
+    /** The longest source accepted, in chars; SubmissionRequestDto's {@code @Size} names it, so a longer one is a 400 early. */
+    public static final int MAX_CODE_LENGTH = 10240;
     private static final long BYTES_PER_MB = 1024L * 1024L;
 
     /**

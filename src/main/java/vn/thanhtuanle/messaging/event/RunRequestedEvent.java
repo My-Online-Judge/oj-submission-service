@@ -28,6 +28,7 @@ public class RunRequestedEvent {
     private Long expiresAt;
 
     /** The submission-service instance that asked; judge-worker echoes it on run.judged so only that instance answers. */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     private String replyTo;
 
     private String src;

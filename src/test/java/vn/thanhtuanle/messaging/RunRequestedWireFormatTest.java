@@ -63,6 +63,17 @@ class RunRequestedWireFormatTest {
     }
 
     @Test
+    void theInstanceThatAskedTravelsAsReplyToAndIsOmittedWhenUnset() throws Exception {
+        SubmissionRequestedEvent template = new JudgeService().buildRequestedEvent("ignored", "int main(){}", SPEC, c(), 0);
+        RunRequestedEvent event = RunRequestedEvent.from(template, RUN_ID, 1761300000000L, List.of(new RunTestCase("1\n", "")));
+        assertThat(json(event).has("replyTo")).isFalse();
+
+        event.setReplyTo("submission-service-7c9f");
+
+        assertThat(json(event).get("replyTo").asText()).isEqualTo("submission-service-7c9f");
+    }
+
+    @Test
     void aRunRequestCarriesInlineCasesAndNoBundleOrSubmissionFields() throws Exception {
         SubmissionRequestedEvent template = new JudgeService().buildRequestedEvent("ignored", "int main(){}", SPEC, c(), 0);
         RunRequestedEvent event = RunRequestedEvent.from(template, RUN_ID, 1761300000000L,

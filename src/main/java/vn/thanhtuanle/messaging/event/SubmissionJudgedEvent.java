@@ -1,5 +1,6 @@
 package vn.thanhtuanle.messaging.event;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -9,6 +10,8 @@ import vn.thanhtuanle.judge.dto.JudgeResultDto;
 
 import java.util.List;
 
+/** Unknown fields (anything a newer worker adds) are ignored, like {@link RunJudgedEvent}. */
+@JsonIgnoreProperties(ignoreUnknown = true)
 @Data
 @Builder
 @NoArgsConstructor
@@ -33,4 +36,7 @@ public class SubmissionJudgedEvent {
 
     /** The request's generation, echoed by the worker; null from an old worker or a request queued before it. */
     private Integer rejudgeCount;
+
+    /** The worker (pod) that judged it, as the worker names itself; null from a worker that does not say. */
+    private String judgedBy;
 }

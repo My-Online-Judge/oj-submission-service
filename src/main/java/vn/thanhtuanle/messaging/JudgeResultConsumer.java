@@ -23,6 +23,8 @@ import java.util.UUID;
 public class JudgeResultConsumer {
 
     static final int MAX_ERROR_MESSAGE_CHARS = 65536;
+    /** t_submissions.judged_by is varchar(255). */
+    static final int MAX_JUDGED_BY_CHARS = 255;
 
     private final SubmissionRepository submissionRepository;
     private final VerdictPubSub verdictPubSub;
@@ -72,6 +74,11 @@ public class JudgeResultConsumer {
                         generation, submissionRepository.findRejudgeCountById(id));
                 return;
             }
+            String judgedBy = event.getJudgedBy();
+            if (judgedBy != null && !judgedBy.isBlank()) {
+                submissionRepository.recordJudgedBy(id, judgedBy.length() > MAX_JUDGED_BY_CHARS
+                        ? judgedBy.substring(0, MAX_JUDGED_BY_CHARS) : judgedBy);
+            }
             Submission submission = submissionRepository.findById(id).orElseThrow(
                     () -> new IllegalStateException("Submission " + id + " vanished after its verdict was written"));
             boolean rejudge = submission.getRejudgeCount() > 0;
@@ -83,7 +90,7 @@ public class JudgeResultConsumer {
             // while the live publish has already passed its emitter by — a lost verdict.
             verdictPubSub.publishAfterCommit(id.toString());
             ojMetrics.recordVerdict(status, submission.getCreatedAt(), rejudge);
-            log.info("Applied verdict {} to submission {}", status, id);
+            log.info("Applied verdict {} to submission {} (judged by {})", status, id, judgedBy);
         } finally {
             MDC.remove("submissionId");
         }

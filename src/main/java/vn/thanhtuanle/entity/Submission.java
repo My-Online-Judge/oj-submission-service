@@ -73,6 +73,10 @@ public class Submission extends BaseEntity {
     @Column(name = "judging_started_at")
     private LocalDateTime judgingStartedAt;
 
+    /** The worker (pod) that produced the stored verdict; null until judged, and for an older or anonymous worker. */
+    @Column(name = "judged_by")
+    private String judgedBy;
+
     @Column(name = "rejudge_count", nullable = false)
     private int rejudgeCount;
 

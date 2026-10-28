@@ -110,6 +110,15 @@ public interface SubmissionRepository extends JpaRepository<Submission, UUID>, J
                      @Param("now") LocalDateTime now);
 
     /**
+     * Names the worker that produced the verdict {@link #applyVerdict} / {@link #applyVerdictOfGeneration} just stored.
+     * Called only after one of them updated the row, in the same transaction, so a dropped late verdict never
+     * overwrites who judged the first one.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE Submission s SET s.judgedBy = :judgedBy WHERE s.id = :id")
+    int recordJudgedBy(@Param("id") UUID id, @Param("judgedBy") String judgedBy);
+
+    /**
      * {@link #applyVerdict} of the generation {@code gen} only: a verdict of an earlier judging (a redelivery, or a
      * dead-letter replay after a rejudge) matches no row. Separate from {@link #applyVerdict} for the same reason as
      * {@link #applyStartedOfGeneration}.

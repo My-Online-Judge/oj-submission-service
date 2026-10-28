@@ -59,6 +59,13 @@ class JudgeResultConsumerPostgresTest extends PostgresTest {
                 .cpuTime(time - 3).realTime(time).memory(3072L).details(details).build();
     }
 
+    private static SubmissionJudgedEvent verdictBy(UUID id, int status, int time, List<JudgeResultDto> details,
+                                                   String judgedBy) {
+        SubmissionJudgedEvent event = verdict(id, status, time, details);
+        event.setJudgedBy(judgedBy);
+        return event;
+    }
+
     @Test
     void theFirstVerdictWinsAndASecondIsDropped() {
         UUID id = insertSubmission(SubmissionResult.JUDGING.getValue());
@@ -106,5 +113,38 @@ class JudgeResultConsumerPostgresTest extends PostgresTest {
                 String.class, id)).isEqualTo("array");
         assertThat(jdbc.queryForObject("SELECT details -> 1 ->> 'test_case' FROM t_submissions WHERE id = ?",
                 String.class, id)).isEqualTo("2");
+    }
+
+    private String judgedBy(UUID id) {
+        return jdbc.queryForObject("SELECT judged_by FROM t_submissions WHERE id = ?", String.class, id);
+    }
+
+    @Test
+    void theWorkerThatJudgedItIsStoredWithTheVerdict() {
+        UUID id = insertSubmission(SubmissionResult.JUDGING.getValue());
+
+        consumer.onJudged(verdictBy(id, SubmissionResult.ACCEPTED.getValue(), 15, List.of(), "judge-7c9f-abcde"));
+
+        assertThat(judgedBy(id)).isEqualTo("judge-7c9f-abcde");
+    }
+
+    @Test
+    void aVerdictFromAnOldWorkerStillLandsWithNoJudgedBy() {
+        UUID id = insertSubmission(SubmissionResult.JUDGING.getValue());
+
+        consumer.onJudged(verdict(id, SubmissionResult.ACCEPTED.getValue(), 15, List.of()));
+
+        assertThat(row(id).get("status")).isEqualTo(SubmissionResult.ACCEPTED.getValue());
+        assertThat(judgedBy(id)).isNull();
+    }
+
+    @Test
+    void aDroppedLateVerdictDoesNotOverwriteWhoJudgedIt() {
+        UUID id = insertSubmission(SubmissionResult.JUDGING.getValue());
+
+        consumer.onJudged(verdictBy(id, SubmissionResult.ACCEPTED.getValue(), 15, List.of(), "judge-first"));
+        consumer.onJudged(verdictBy(id, SubmissionResult.WRONG_ANSWER.getValue(), 99, List.of(), "judge-second"));
+
+        assertThat(judgedBy(id)).isEqualTo("judge-first");
     }
 }

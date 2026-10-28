@@ -30,4 +30,29 @@ class SubmissionJudgedWireFormatTest {
 
         assertThat(event.getRejudgeCount()).isNull();
     }
+
+    @Test
+    void theWorkerThatJudgedItIsRead() throws Exception {
+        SubmissionJudgedEvent event = JacksonUtils.enhancedObjectMapper()
+                .readValue(VERDICT + ",\"judgedBy\":\"judge-7c9f-abcde\"}", SubmissionJudgedEvent.class);
+
+        assertThat(event.getJudgedBy()).isEqualTo("judge-7c9f-abcde");
+    }
+
+    @Test
+    void anOldWorkersVerdictNamesNoWorker() throws Exception {
+        SubmissionJudgedEvent event = JacksonUtils.enhancedObjectMapper()
+                .readValue(VERDICT + "}", SubmissionJudgedEvent.class);
+
+        assertThat(event.getJudgedBy()).isNull();
+    }
+
+    /** Spring Kafka's mapper tolerates unknown fields; the event itself must too, as RunJudgedEvent does. */
+    @Test
+    void aFieldAFutureWorkerAddsDoesNotBreakTheEventWithAStrictMapper() throws Exception {
+        SubmissionJudgedEvent event = new com.fasterxml.jackson.databind.ObjectMapper()
+                .readValue(VERDICT + ",\"aFutureField\":1}", SubmissionJudgedEvent.class);
+
+        assertThat(event.getSubmissionId()).isEqualTo("0b6f0a4e-9a4e-4c47-9d0e-5f3c2b1a0d9e");
+    }
 }

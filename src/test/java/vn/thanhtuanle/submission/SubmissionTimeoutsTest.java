@@ -42,6 +42,8 @@ class SubmissionTimeoutsTest extends PostgresTest {
     private static final LocalDateTime NOW = LocalDateTime.of(2001, 1, 1, 12, 0);
     private static final LocalDateTime JUDGING_THRESHOLD = NOW.minusMinutes(3);
     private static final LocalDateTime PENDING_THRESHOLD = NOW.minusMinutes(30);
+    /** The progress window: a worker that started anything in the last 5 minutes means the queue is being drained. */
+    private static final LocalDateTime PROGRESS_SINCE = NOW.minusMinutes(5);
     private static final int PENDING = SubmissionResult.PENDING.getValue();
     private static final int JUDGING = SubmissionResult.JUDGING.getValue();
 
@@ -161,7 +163,7 @@ class SubmissionTimeoutsTest extends PostgresTest {
         UUID judging = submission(JUDGING, NOW.minusHours(1), NOW.minusMinutes(1), 0);
         UUID accepted = submission(SubmissionResult.ACCEPTED.getValue(), NOW.minusHours(1), null, 0);
 
-        assertThat(timeouts.failPendingCreatedBefore(PENDING_THRESHOLD, NOW)).isEmpty();
+        assertThat(timeouts.failPendingCreatedBefore(PENDING_THRESHOLD, NOW, PROGRESS_SINCE)).isEmpty();
         assertThat(row(judging).get("status")).isEqualTo(JUDGING);
         assertThat(row(accepted).get("status")).isEqualTo(SubmissionResult.ACCEPTED.getValue());
     }
@@ -171,7 +173,7 @@ class SubmissionTimeoutsTest extends PostgresTest {
         UUID id = pending(NOW.minusMinutes(32));
         request(id, NOW.minusMinutes(31));
 
-        List<TimedOut> timedOut = timeouts.failPendingCreatedBefore(PENDING_THRESHOLD, NOW);
+        List<TimedOut> timedOut = timeouts.failPendingCreatedBefore(PENDING_THRESHOLD, NOW, PROGRESS_SINCE);
 
         assertThat(timedOut).containsExactly(timedOut(id, false));
         Map<String, Object> row = row(id);
@@ -187,7 +189,7 @@ class SubmissionTimeoutsTest extends PostgresTest {
         UUID id = pending(NOW.minusHours(1));
         request(id, null);
 
-        assertThat(timeouts.failPendingCreatedBefore(PENDING_THRESHOLD, NOW)).isEmpty();
+        assertThat(timeouts.failPendingCreatedBefore(PENDING_THRESHOLD, NOW, PROGRESS_SINCE)).isEmpty();
         assertThat(row(id).get("status")).isEqualTo(PENDING);
     }
 
@@ -198,7 +200,7 @@ class SubmissionTimeoutsTest extends PostgresTest {
         request(id, NOW.minusHours(2));
         request(id, NOW.minusMinutes(1));
 
-        assertThat(timeouts.failPendingCreatedBefore(PENDING_THRESHOLD, NOW)).isEmpty();
+        assertThat(timeouts.failPendingCreatedBefore(PENDING_THRESHOLD, NOW, PROGRESS_SINCE)).isEmpty();
         assertThat(row(id).get("status")).isEqualTo(PENDING);
     }
 
@@ -208,7 +210,7 @@ class SubmissionTimeoutsTest extends PostgresTest {
         UUID old = pending(NOW.minusMinutes(31));
         UUID young = pending(NOW.minusMinutes(29));
 
-        List<TimedOut> timedOut = timeouts.failPendingCreatedBefore(PENDING_THRESHOLD, NOW);
+        List<TimedOut> timedOut = timeouts.failPendingCreatedBefore(PENDING_THRESHOLD, NOW, PROGRESS_SINCE);
 
         assertThat(ids(timedOut)).containsExactly(old);
         assertThat(row(old).get("error_message")).isEqualTo("Judging request lost");
@@ -216,14 +218,47 @@ class SubmissionTimeoutsTest extends PostgresTest {
     }
 
     @Test
+    void aLongPendingIsKeptWhileAWorkerKeepsStartingSubmissions() {
+        // A queue longer than 30 minutes is not lost work while the workers are working through it.
+        UUID waiting = pending(NOW.minusMinutes(40));
+        request(waiting, NOW.minusMinutes(35));
+        submission(SubmissionResult.ACCEPTED.getValue(), NOW.minusMinutes(50), NOW.minusMinutes(1), 0);
+
+        assertThat(timeouts.failPendingCreatedBefore(PENDING_THRESHOLD, NOW, PROGRESS_SINCE)).isEmpty();
+        assertThat(row(waiting).get("status")).isEqualTo(PENDING);
+    }
+
+    @Test
+    void aLongPendingIsFailedWhenNoWorkerStartedAnythingInTheWindow() {
+        UUID waiting = pending(NOW.minusMinutes(40));
+        request(waiting, NOW.minusMinutes(35));
+        submission(SubmissionResult.ACCEPTED.getValue(), NOW.minusMinutes(50), NOW.minusMinutes(10), 0);
+
+        assertThat(ids(timeouts.failPendingCreatedBefore(PENDING_THRESHOLD, NOW, PROGRESS_SINCE)))
+                .containsExactly(waiting);
+    }
+
+    @Test
+    void aStartDatedAfterTheCallIsNotProgress() {
+        // Rows other tests leave carry today's times, long after this test's 2001 clock: they must not count.
+        UUID waiting = pending(NOW.minusMinutes(40));
+        request(waiting, NOW.minusMinutes(35));
+        submission(SubmissionResult.ACCEPTED.getValue(), NOW.minusMinutes(50), NOW.plusDays(1), 0);
+
+        assertThat(ids(timeouts.failPendingCreatedBefore(PENDING_THRESHOLD, NOW, PROGRESS_SINCE)))
+                .containsExactly(waiting);
+    }
+
+    @Test
     void aRejudgedRowIsReturnedWithRejudgeTrue() {
-        UUID judging = submission(JUDGING, NOW.minusHours(2), NOW.minusMinutes(4), 2);
+        // started 6 min ago: past the 3 min judging threshold, outside the 5 min window the pending rule reads as progress
+        UUID judging = submission(JUDGING, NOW.minusHours(2), NOW.minusMinutes(6), 2);
         UUID pending = submission(PENDING, NOW.minusHours(2), null, 1);
         request(pending, NOW.minusMinutes(31));
 
         assertThat(timeouts.failJudgingStartedBefore(JUDGING_THRESHOLD, NOW))
                 .containsExactly(timedOut(judging, true));
-        assertThat(timeouts.failPendingCreatedBefore(PENDING_THRESHOLD, NOW))
+        assertThat(timeouts.failPendingCreatedBefore(PENDING_THRESHOLD, NOW, PROGRESS_SINCE))
                 .containsExactly(timedOut(pending, true));
     }
 
@@ -231,12 +266,12 @@ class SubmissionTimeoutsTest extends PostgresTest {
     void bothRulesReturnTheSubmitterTheContestAndTheSubmitTime() {
         UUID userId = UUID.randomUUID();
         UUID contestId = UUID.randomUUID();
-        UUID judging = submission(JUDGING, NOW.minusMinutes(10), NOW.minusMinutes(4), 0, userId, contestId);
+        UUID judging = submission(JUDGING, NOW.minusMinutes(10), NOW.minusMinutes(6), 0, userId, contestId);
         UUID pending = submission(PENDING, NOW.minusMinutes(40), null, 0, userId, contestId);
 
         assertThat(timeouts.failJudgingStartedBefore(JUDGING_THRESHOLD, NOW)).containsExactly(
                 new TimedOut(judging, problemId(judging), false, userId, contestId, NOW.minusMinutes(10)));
-        assertThat(timeouts.failPendingCreatedBefore(PENDING_THRESHOLD, NOW)).containsExactly(
+        assertThat(timeouts.failPendingCreatedBefore(PENDING_THRESHOLD, NOW, PROGRESS_SINCE)).containsExactly(
                 new TimedOut(pending, problemId(pending), false, userId, contestId, NOW.minusMinutes(40)));
     }
 

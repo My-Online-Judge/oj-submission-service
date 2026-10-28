@@ -58,16 +58,25 @@ public class SubmissionTimeouts {
      * the outbox (Kafka down) has not reached a worker, and one sent after the threshold (a rejudge of an old
      * submission, say) has had too little time. A submission without a request row (sent before the outbox existed,
      * or its row cleaned up) counts from its creation.
+     *
+     * <p>Nothing fails while the queue is being worked through: a worker that announced a start between
+     * {@code progressSince} and {@code now} is draining it, and a long queue (the admission cap is hundreds, a worker
+     * judges one at a time) is waiting, not lost. Only when no worker has started anything in that window is a
+     * PENDING row past the threshold taken as a lost request. Starts dated after {@code now} are not progress.
      */
-    public List<TimedOut> failPendingCreatedBefore(LocalDateTime threshold, LocalDateTime now) {
+    public List<TimedOut> failPendingCreatedBefore(LocalDateTime threshold, LocalDateTime now,
+                                                   LocalDateTime progressSince) {
         return jdbc.query("""
                 UPDATE t_submissions s SET status = 5, error_message = :message, updated_at = :now
                 WHERE s.status = 6 AND s.created_at < :threshold
                   AND NOT EXISTS (SELECT 1 FROM t_outbox o
                                   WHERE o.topic = :requestTopic AND o.message_key = s.id::text
                                     AND (o.published_at IS NULL OR o.published_at >= :threshold))
+                  AND NOT EXISTS (SELECT 1 FROM t_submissions p
+                                  WHERE p.judging_started_at >= :progressSince AND p.judging_started_at <= :now)
                 RETURNING s.id, s.problem_id, s.rejudge_count > 0 AS rejudge, s.user_id, s.contest_id, s.created_at
-                """, params(REQUEST_LOST, threshold, now).addValue("requestTopic", KafkaTopics.SUBMISSION_REQUESTED),
+                """, params(REQUEST_LOST, threshold, now).addValue("requestTopic", KafkaTopics.SUBMISSION_REQUESTED)
+                        .addValue("progressSince", progressSince),
                 TIMED_OUT);
     }
 

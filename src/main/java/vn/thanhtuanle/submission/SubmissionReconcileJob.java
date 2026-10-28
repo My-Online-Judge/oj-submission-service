@@ -24,8 +24,10 @@ import java.util.function.Supplier;
  *   <li>JUDGING whose worker started more than {@code judge.judging-timeout} (3 min) ago: the worker, its sandbox or
  *       the verdict died ({@value SubmissionTimeouts#JUDGING_TIMED_OUT});</li>
  *   <li>PENDING whose judge request left the outbox more than {@code judge.pending-timeout} (30 min) ago, or without
- *       a request row was created that long ago: the request was lost ({@value SubmissionTimeouts#REQUEST_LOST}).
- *       A request still waiting in the outbox, or a queue that is merely long, is not lost work.</li>
+ *       a request row was created that long ago, <em>and</em> no worker started any submission in the last
+ *       {@code judge.pending-progress-window} (5 min): the request was lost ({@value SubmissionTimeouts#REQUEST_LOST}).
+ *       A request still waiting in the outbox, or a queue that is merely long while the workers drain it, is not lost
+ *       work.</li>
  * </ul>
  * Each rule runs in its own transaction; every failed row gets one {@code SubmissionVerdictRecorded} in the outbox and
  * one SSE push after the commit. A late verdict for a failed row is dropped by the verdict's conditional write
@@ -41,17 +43,20 @@ public class SubmissionReconcileJob {
     private final TransactionOperations transaction;
     private final Duration judgingTimeout;
     private final Duration pendingTimeout;
+    private final Duration pendingProgressWindow;
 
     public SubmissionReconcileJob(SubmissionTimeouts timeouts, OutboxWriter outboxWriter, VerdictPubSub verdictPubSub,
                                   TransactionOperations transaction,
                                   @Value("${judge.judging-timeout:3m}") Duration judgingTimeout,
-                                  @Value("${judge.pending-timeout:30m}") Duration pendingTimeout) {
+                                  @Value("${judge.pending-timeout:30m}") Duration pendingTimeout,
+                                  @Value("${judge.pending-progress-window:5m}") Duration pendingProgressWindow) {
         this.timeouts = timeouts;
         this.outboxWriter = outboxWriter;
         this.verdictPubSub = verdictPubSub;
         this.transaction = transaction;
         this.judgingTimeout = judgingTimeout;
         this.pendingTimeout = pendingTimeout;
+        this.pendingProgressWindow = pendingProgressWindow;
     }
 
     @Scheduled(fixedDelayString = "${judge.reconcile-interval-ms:60000}",
@@ -62,7 +67,8 @@ public class SubmissionReconcileJob {
         failAndAnnounce(SubmissionTimeouts.JUDGING_TIMED_OUT,
                 () -> timeouts.failJudgingStartedBefore(now.minus(judgingTimeout), now));
         failAndAnnounce(SubmissionTimeouts.REQUEST_LOST,
-                () -> timeouts.failPendingCreatedBefore(now.minus(pendingTimeout), now));
+                () -> timeouts.failPendingCreatedBefore(now.minus(pendingTimeout), now,
+                        now.minus(pendingProgressWindow)));
     }
 
     private void failAndAnnounce(String reason, Supplier<List<TimedOut>> failRule) {

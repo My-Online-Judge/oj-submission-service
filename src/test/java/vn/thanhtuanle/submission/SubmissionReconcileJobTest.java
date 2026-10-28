@@ -50,7 +50,7 @@ class SubmissionReconcileJobTest {
     @BeforeEach
     void setUp() {
         job = new SubmissionReconcileJob(timeouts, outboxWriter, verdictPubSub, transactions,
-                Duration.ofMinutes(3), Duration.ofMinutes(30));
+                Duration.ofMinutes(3), Duration.ofMinutes(30), Duration.ofMinutes(5));
     }
 
     /** A practice row (no contest) one of the rules failed. */
@@ -71,7 +71,7 @@ class SubmissionReconcileJobTest {
         TimedOut judging2 = timedOut(true);
         TimedOut pending = timedOut(false);
         when(timeouts.failJudgingStartedBefore(any(), any())).thenReturn(List.of(judging1, judging2));
-        when(timeouts.failPendingCreatedBefore(any(), any())).thenReturn(List.of(pending));
+        when(timeouts.failPendingCreatedBefore(any(), any(), any())).thenReturn(List.of(pending));
         List<Boolean> appendedInATransaction = new ArrayList<>();
         doAnswer(call -> appendedInATransaction.add(transactions.open))
                 .when(outboxWriter).append(anyString(), anyString(), any());
@@ -105,7 +105,7 @@ class SubmissionReconcileJobTest {
             TimedOut judging = new TimedOut(UUID.randomUUID(), UUID.randomUUID(), false, userId, contestId,
                     LocalDateTime.parse("2026-10-19T10:00"));
             when(timeouts.failJudgingStartedBefore(any(), any())).thenReturn(List.of(judging));
-            when(timeouts.failPendingCreatedBefore(any(), any())).thenReturn(List.of());
+            when(timeouts.failPendingCreatedBefore(any(), any(), any())).thenReturn(List.of());
 
             job.reconcile();
 
@@ -123,7 +123,7 @@ class SubmissionReconcileJobTest {
     @Test
     void thresholdsAreThreeAndThirtyMinutesAgo() {
         when(timeouts.failJudgingStartedBefore(any(), any())).thenReturn(List.of());
-        when(timeouts.failPendingCreatedBefore(any(), any())).thenReturn(List.of());
+        when(timeouts.failPendingCreatedBefore(any(), any(), any())).thenReturn(List.of());
 
         job.reconcile();
 
@@ -133,17 +133,20 @@ class SubmissionReconcileJobTest {
         verify(timeouts).failJudgingStartedBefore(judgingThreshold.capture(), judgingNow.capture());
         ArgumentCaptor<LocalDateTime> pendingThreshold = ArgumentCaptor.forClass(LocalDateTime.class);
         ArgumentCaptor<LocalDateTime> pendingNow = ArgumentCaptor.forClass(LocalDateTime.class);
-        verify(timeouts).failPendingCreatedBefore(pendingThreshold.capture(), pendingNow.capture());
+        ArgumentCaptor<LocalDateTime> progressSince = ArgumentCaptor.forClass(LocalDateTime.class);
+        verify(timeouts).failPendingCreatedBefore(pendingThreshold.capture(), pendingNow.capture(),
+                progressSince.capture());
         assertThat(judgingThreshold.getValue()).isCloseTo(now.minusMinutes(3), within(5, SECONDS));
         assertThat(pendingThreshold.getValue()).isCloseTo(now.minusMinutes(30), within(5, SECONDS));
         assertThat(judgingNow.getValue()).isCloseTo(now, within(5, SECONDS));
         assertThat(pendingNow.getValue()).isCloseTo(now, within(5, SECONDS));
+        assertThat(progressSince.getValue()).isCloseTo(now.minusMinutes(5), within(5, SECONDS));
     }
 
     @Test
     void nothingTimedOutWritesNothing() {
         when(timeouts.failJudgingStartedBefore(any(), any())).thenReturn(List.of());
-        when(timeouts.failPendingCreatedBefore(any(), any())).thenReturn(List.of());
+        when(timeouts.failPendingCreatedBefore(any(), any(), any())).thenReturn(List.of());
 
         job.reconcile();
 

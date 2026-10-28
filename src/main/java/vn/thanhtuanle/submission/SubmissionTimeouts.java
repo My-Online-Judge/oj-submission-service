@@ -59,10 +59,12 @@ public class SubmissionTimeouts {
      * submission, say) has had too little time. A submission without a request row (sent before the outbox existed,
      * or its row cleaned up) counts from its creation.
      *
-     * <p>Nothing fails while the queue is being worked through: a worker that announced a start between
-     * {@code progressSince} and {@code now} is draining it, and a long queue (the admission cap is hundreds, a worker
-     * judges one at a time) is waiting, not lost. Only when no worker has started anything in that window is a
-     * PENDING row past the threshold taken as a lost request. Starts dated after {@code now} are not progress.
+     * <p>A request that is merely queued is not lost work: while workers are starting submissions <em>older</em> than this
+     * one (created before it, started between {@code progressSince} and {@code now}), the queue is being drained in order
+     * and this one's turn has not come. When nothing older was started in that window, either nothing is being worked on or
+     * only newer submissions are, so this one was skipped (a record the worker could not read, a lost request) and is
+     * failed. A request whose outbox row is dead (the relay gave up on it) will never leave the outbox, so it is not
+     * "still waiting there". Starts dated after {@code now} are not progress.
      */
     public List<TimedOut> failPendingCreatedBefore(LocalDateTime threshold, LocalDateTime now,
                                                    LocalDateTime progressSince) {
@@ -71,9 +73,10 @@ public class SubmissionTimeouts {
                 WHERE s.status = 6 AND s.created_at < :threshold
                   AND NOT EXISTS (SELECT 1 FROM t_outbox o
                                   WHERE o.topic = :requestTopic AND o.message_key = s.id::text
-                                    AND (o.published_at IS NULL OR o.published_at >= :threshold))
+                                    AND ((o.published_at IS NULL AND o.dead_at IS NULL) OR o.published_at >= :threshold))
                   AND NOT EXISTS (SELECT 1 FROM t_submissions p
-                                  WHERE p.judging_started_at >= :progressSince AND p.judging_started_at <= :now)
+                                  WHERE p.judging_started_at >= :progressSince AND p.judging_started_at <= :now
+                                    AND p.created_at < s.created_at)
                 RETURNING s.id, s.problem_id, s.rejudge_count > 0 AS rejudge, s.user_id, s.contest_id, s.created_at
                 """, params(REQUEST_LOST, threshold, now).addValue("requestTopic", KafkaTopics.SUBMISSION_REQUESTED)
                         .addValue("progressSince", progressSince),

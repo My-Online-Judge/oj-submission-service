@@ -21,6 +21,9 @@ import java.util.concurrent.TimeUnit;
 @Component
 public class KafkaOutboxSender implements OutboxSender, DisposableBean {
 
+    /** The longest one send waits for the broker's acknowledgement; OutboxRelay keeps a lease margin of this much. */
+    public static final int SEND_TIMEOUT_SECONDS = 15;
+
     private final DefaultKafkaProducerFactory<String, byte[]> producerFactory;
     private final KafkaTemplate<String, byte[]> template;
 
@@ -43,7 +46,7 @@ public class KafkaOutboxSender implements OutboxSender, DisposableBean {
 
     @Override
     public void send(OutboxMessage message) throws Exception {
-        template.send(message.getTopic(), message.getMessageKey(), message.getPayload()).get(15, TimeUnit.SECONDS);
+        template.send(message.getTopic(), message.getMessageKey(), message.getPayload()).get(SEND_TIMEOUT_SECONDS, TimeUnit.SECONDS);
     }
 
     @Override

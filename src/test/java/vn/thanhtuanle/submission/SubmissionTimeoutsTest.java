@@ -229,6 +229,28 @@ class SubmissionTimeoutsTest extends PostgresTest {
     }
 
     @Test
+    void aLongPendingIsFailedWhenOnlyNewerSubmissionsAreBeingStarted() {
+        // Work submitted after it is being started while it is not: its request was skipped, not queued.
+        UUID skipped = pending(NOW.minusMinutes(40));
+        request(skipped, NOW.minusMinutes(35));
+        submission(SubmissionResult.ACCEPTED.getValue(), NOW.minusMinutes(10), NOW.minusMinutes(1), 0);
+
+        assertThat(ids(timeouts.failPendingCreatedBefore(PENDING_THRESHOLD, NOW, PROGRESS_SINCE)))
+                .containsExactly(skipped);
+    }
+
+    @Test
+    void aLongPendingWhoseRequestRowIsDeadIsFailed() {
+        // The relay gave up on its request: it will never leave the outbox, so "still waiting there" is not true.
+        UUID id = pending(NOW.minusHours(1));
+        request(id, null);
+        jdbc.update("UPDATE t_outbox SET dead_at = ? WHERE message_key = ?", NOW.minusMinutes(5), id.toString());
+
+        assertThat(ids(timeouts.failPendingCreatedBefore(PENDING_THRESHOLD, NOW, PROGRESS_SINCE)))
+                .containsExactly(id);
+    }
+
+    @Test
     void aLongPendingIsFailedWhenNoWorkerStartedAnythingInTheWindow() {
         UUID waiting = pending(NOW.minusMinutes(40));
         request(waiting, NOW.minusMinutes(35));

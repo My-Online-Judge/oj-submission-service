@@ -261,4 +261,28 @@ class OutboxRelayPostgresTest {
         assertThat(sent).containsExactly("expired");
         assertThat(row("held").get("published_at")).isNull();
     }
+
+    @Test
+    void aPassStopsSendingBeforeItsLeaseCouldEndAndGivesTheRestBack() {
+        // Lease 16 s, a send may take 15 s: a pass may start a send only in the first second, or another instance could
+        // claim the rest while this one still sends it (a duplicate judge request).
+        for (int i = 0; i < 4; i++) {
+            append("m" + i, 100 - i);
+        }
+        OutboxProperties props = new OutboxProperties();
+        props.setLeaseSeconds(16);
+        props.setSendTimeoutSeconds(15);
+        OutboxSender slow = m -> {
+            Thread.sleep(600);
+            sent.add(m.getMessageKey());
+        };
+
+        int count = new OutboxRelay(repository, slow, transactionManager, props).relayBatch();
+
+        assertThat(count).isEqualTo(2);                          // t = 0 and t = 0.6 s; at 1.2 s the lease margin is over
+        assertThat(sent).containsExactly("m0", "m1");
+        assertThat(row("m2").get("claimed_until")).as("given back at once, so the next pass sends it").isNull();
+        assertThat(row("m3").get("claimed_until")).isNull();
+        assertThat(row("m2").get("attempts")).as("not a refusal").isEqualTo(0);
+    }
 }

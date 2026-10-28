@@ -24,10 +24,10 @@ import java.util.function.Supplier;
  *   <li>JUDGING whose worker started more than {@code judge.judging-timeout} (3 min) ago: the worker, its sandbox or
  *       the verdict died ({@value SubmissionTimeouts#JUDGING_TIMED_OUT});</li>
  *   <li>PENDING whose judge request left the outbox more than {@code judge.pending-timeout} (30 min) ago, or without
- *       a request row was created that long ago, <em>and</em> no worker started any submission in the last
- *       {@code judge.pending-progress-window} (5 min): the request was lost ({@value SubmissionTimeouts#REQUEST_LOST}).
- *       A request still waiting in the outbox, or a queue that is merely long while the workers drain it, is not lost
- *       work.</li>
+ *       a request row was created that long ago, <em>and</em> no worker started an older submission in the last
+ *       {@code judge.pending-progress-window} (5 min): the request was lost or skipped
+ *       ({@value SubmissionTimeouts#REQUEST_LOST}). A request still waiting in the outbox (not dead), or a queue that is
+ *       merely long while the workers drain it in order, is not lost work.</li>
  * </ul>
  * Each rule runs in its own transaction; every failed row gets one {@code SubmissionVerdictRecorded} in the outbox and
  * one SSE push after the commit. A late verdict for a failed row is dropped by the verdict's conditional write

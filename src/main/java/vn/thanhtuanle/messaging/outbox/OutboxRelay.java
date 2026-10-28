@@ -100,14 +100,19 @@ public class OutboxRelay {
      *       {@code maxAttempts}; the rows behind it are still sent.</li>
      *   <li>Failed in a way that may heal (Kafka down): this row and every one not yet tried are given back at once,
      *       uncounted, and the pass stops; the next pass retries them in order.</li>
+     *   <li>Too late in the lease to start another send (a slow broker): the rows not yet tried are given back and the
+     *       pass stops, so no row is still being sent when another instance may claim it.</li>
      * </ul>
      *
      * @return how many rows were sent
      */
     int relayBatch() {
         LocalDateTime claimedAt = LocalDateTime.now();
+        LocalDateTime leaseUntil = claimedAt.plusSeconds(props.getLeaseSeconds());
+        // No send starts after this: it could still be running when the lease ends and another instance claims the row.
+        LocalDateTime lastSendStart = leaseUntil.minusSeconds(props.getSendTimeoutSeconds());
         List<OutboxMessage> claimed = transaction.execute(status -> repository.claim(
-                props.getBatchSize(), claimedAt, claimedAt.plusSeconds(props.getLeaseSeconds())));
+                props.getBatchSize(), claimedAt, leaseUntil));
         if (claimed == null || claimed.isEmpty()) {
             return 0;
         }
@@ -117,6 +122,11 @@ public class OutboxRelay {
         int sent = 0;
         for (int i = 0; i < inOrder.size(); i++) {
             OutboxMessage message = inOrder.get(i);
+            if (LocalDateTime.now().isAfter(lastSendStart)) {
+                List<UUID> untried = inOrder.subList(i, inOrder.size()).stream().map(OutboxMessage::getId).toList();
+                transaction.executeWithoutResult(status -> repository.releaseClaims(untried));
+                break;
+            }
             try {
                 sender.send(message);
             } catch (Exception e) {

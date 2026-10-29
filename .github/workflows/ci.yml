@@ -12,14 +12,13 @@ env:
   # oj-common is not published to a Maven repository yet. The job checks this tag out next to the
   # service (the same sibling layout the Dockerfile and judge-deployment use) and installs it.
   oj-common-ref: v0.9.0
-  IMAGE: ghcr.io/my-online-judge/oj-submission-service
+  IMAGE: docker.io/thanhtuanle/oj-submission-service
 
 jobs:
   verify:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
     defaults:
       run:
         working-directory: oj-submission-service
@@ -71,9 +70,8 @@ jobs:
       - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: docker push "$IMAGE:${{ github.sha }}" && docker push "$IMAGE:main"

@@ -46,6 +46,12 @@ spring:
         spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer
         spring.json.trusted.packages: "vn.thanhtuanle.messaging.event"
         spring.json.value.default.type: "vn.thanhtuanle.messaging.event.SubmissionJudgedEvent"
+    listener:
+      # A listener that subscribes before its ACLs exist gets TOPIC_AUTHORIZATION_FAILED; without this interval Spring
+      # Kafka stops that container for good (Run answered 504 until a restart). On K3s nothing orders this pod after
+      # the kafka-init Job, as compose's depends_on does, so keep retrying until the ACLs are there. Boot's configurer
+      # applies it to every factory, RunKafkaConfig's included.
+      auth-exception-retry-interval: 5s
   grpc:
     client:
       channels:

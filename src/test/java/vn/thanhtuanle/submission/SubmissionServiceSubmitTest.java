@@ -129,7 +129,7 @@ class SubmissionServiceSubmitTest {
 
         SubmissionResponseDto dto = submissionService.submit(req);
 
-        verify(judgeService).validate("int main(){}");
+        verify(judgeService).validate("int main(){}", "cpp");
         ArgumentCaptor<Submission> saved = ArgumentCaptor.forClass(Submission.class);
         verify(submissionRepository).save(saved.capture());
         assertThat(saved.getValue().getStatus()).isEqualTo(SubmissionResult.PENDING.getValue());
@@ -155,7 +155,7 @@ class SubmissionServiceSubmitTest {
                 .isInstanceOfSatisfying(RateLimitedException.class,
                         e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.QUEUE_FULL));
 
-        verify(judgeService).validate("int main(){}");
+        verify(judgeService).validate("int main(){}", "cpp");
         verifyNoInteractions(problemCatalog, languageRepository, currentUser, submissionRateLimiter,
                 submissionRepository, outboxWriter);
         verify(admission, never()).release(anyInt());  // nothing was reserved
@@ -163,7 +163,7 @@ class SubmissionServiceSubmitTest {
 
     @Test
     void anInvalidSourceReservesNoQueueSlot() {
-        doThrow(new IllegalArgumentException("Source code cannot be empty")).when(judgeService).validate("");
+        doThrow(new IllegalArgumentException("Source code cannot be empty")).when(judgeService).validate("", "cpp");
 
         assertThatThrownBy(() -> submissionService.submit(SubmissionRequestDto.builder()
                 .sourceCode("").languageIdentifier("cpp").problemSlug("a-plus-b").build()))

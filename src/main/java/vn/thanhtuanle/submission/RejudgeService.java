@@ -12,6 +12,7 @@ import vn.thanhtuanle.entity.Language;
 import vn.thanhtuanle.entity.Submission;
 import vn.thanhtuanle.judge.CheckerLanguages;
 import vn.thanhtuanle.judge.JudgeService;
+import vn.thanhtuanle.judge.source.SourcePolicies;
 import vn.thanhtuanle.messaging.KafkaTopics;
 import vn.thanhtuanle.messaging.event.SubmissionRequestedEvent;
 import vn.thanhtuanle.messaging.outbox.OutboxWriter;
@@ -59,6 +60,9 @@ public class RejudgeService {
         if (!SubmissionResult.isTerminal(submission.getStatus())) {
             throw new AppException(ErrorCode.SUBMISSION_NOT_FINISHED);
         }
+
+        // A source from before the current policy: it must not reach the sandbox by being judged again.
+        judgeService.validate(submission.getSourceCode(), submission.getLanguage().getIdentifier());
 
         admission.admit(1);
         try {
@@ -110,7 +114,8 @@ public class RejudgeService {
         try {
             JudgeSpec spec = problemCatalog.judgeSpec(slug, true);
             Language checkerLanguage = checkerLanguages.forSpec(spec);
-            queued = transactions.execute(tx -> resetAndQueue(taken, spec, checkerLanguage));
+            List<UUID> judgeable = withAcceptedSource(taken);
+            queued = transactions.execute(tx -> resetAndQueue(judgeable, spec, checkerLanguage));
         } catch (RuntimeException | Error e) {
             admission.release(reserved);
             throw e;
@@ -122,6 +127,20 @@ public class RejudgeService {
         log.info("Problem {} rejudge queued {} of {} submission(s) ({} had queue room)", slug, count,
                 candidates.size(), reserved);
         return new RejudgeQueued(count);
+    }
+
+    /** The candidates whose source its language's policy still accepts; the others keep their verdict. */
+    private List<UUID> withAcceptedSource(List<UUID> candidates) {
+        List<UUID> accepted = new ArrayList<>(candidates.size());
+        for (Submission submission : submissionRepository.findWithLanguageByIdIn(candidates)) {
+            var violation = SourcePolicies.check(submission.getLanguage().getIdentifier(), submission.getSourceCode());
+            if (violation.isEmpty()) {
+                accepted.add(submission.getId());
+            } else {
+                log.warn("Rejudge left out submission {}: {}", submission.getId(), violation.get().message());
+            }
+        }
+        return accepted;
     }
 
     /**

@@ -60,7 +60,7 @@ public class RunService {
     private final Clock clock;
 
     public DeferredResult<ApiResponse<RunResponseDto>> run(RunRequestDto req) {
-        judgeService.validate(req.getSourceCode());
+        judgeService.validate(req.getSourceCode(), req.getLanguageIdentifier());
         List<RunCaseDto> cases = validator.validate(req);
 
         // Resolved first — limits, the checker and the contest included — so neither an unknown problem, one that

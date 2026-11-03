@@ -73,7 +73,7 @@ public class SubmissionService {
      */
     public SubmissionResponseDto submit(SubmissionRequestDto req) {
         log.info("Start submission for problem: {}", req.getProblemSlug());
-        judgeService.validate(req.getSourceCode());
+        judgeService.validate(req.getSourceCode(), req.getLanguageIdentifier());
 
         // A full queue refuses first: no gRPC call, no cooldown armed.
         admission.admit(1);

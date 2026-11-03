@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 
 import vn.thanhtuanle.common.constant.AppProperties;
 import vn.thanhtuanle.entity.Language;
+import vn.thanhtuanle.judge.source.SourcePolicies;
 import vn.thanhtuanle.submission.problem.JudgeSpec;
 import vn.thanhtuanle.judge.dto.*;
 import vn.thanhtuanle.messaging.event.SubmissionRequestedEvent;
@@ -52,26 +53,22 @@ public class JudgeService {
     private static final int SPJ_COMPILE_MAX_CPU_TIME_MS = 10000;
     private static final int SPJ_COMPILE_MAX_REAL_TIME_MS = 20000;
 
-    private static final List<String> BLACKLISTED_KEYWORDS = List.of(
-            "Runtime.getRuntime().exec",
-            "/bin/sh",
-            "ProcessBuilder",
-            "java.lang.Runtime");
-
-    public void validate(String sourceCode) {
-        log.info("Start validate source code");
+    /**
+     * Refuses a source that is empty, over the cap, or against its language's policy, with the reason as the 400's
+     * message. {@code languageIdentifier} may name no language yet (the submit resolves it after this): such a source
+     * gets the common checks, and the submit then answers 404.
+     */
+    public void validate(String sourceCode, String languageIdentifier) {
         if (sourceCode == null || sourceCode.isEmpty()) {
             throw new IllegalArgumentException("Source code cannot be empty");
         }
         if (sourceCode.length() > MAX_CODE_LENGTH) {
             throw new IllegalArgumentException("Source code length exceeds the limit");
         }
-        for (String keyword : BLACKLISTED_KEYWORDS) {
-            if (sourceCode.contains(keyword)) {
-                throw new IllegalArgumentException("Source code contains blacklisted keyword: " + keyword);
-            }
-        }
-        log.info("End validate source code");
+        SourcePolicies.check(languageIdentifier, sourceCode).ifPresent(violation -> {
+            log.warn("Source refused for language {}: {}", languageIdentifier, violation.message());
+            throw new IllegalArgumentException(violation.message());
+        });
     }
 
     /** A problem without a checker. */

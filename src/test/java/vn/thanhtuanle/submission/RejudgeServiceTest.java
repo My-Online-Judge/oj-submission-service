@@ -284,4 +284,19 @@ class RejudgeServiceTest extends PostgresTest {
         verify(admission).admit(1);
         verify(admission).release(1);
     }
+
+    @Test
+    void aSourceTheJudgeNoLongerAcceptsIs400AndKeepsItsVerdict() {
+        UUID id = insertSubmission(0);
+        jdbc.update("UPDATE t_submissions SET source_code = ? WHERE id = ?", "#include </etc/passwd>", id);
+
+        assertThatThrownBy(() -> rejudgeService.rejudge(id))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("file path");
+
+        assertThat(row(id).get("status")).as("the verdict stands").isEqualTo(0);
+        assertThat(requests(id)).as("a refused source never reaches the sandbox").isEmpty();
+        verifyNoInteractions(problemCatalog);
+        verify(admission, never()).admit(anyInt());
+    }
 }

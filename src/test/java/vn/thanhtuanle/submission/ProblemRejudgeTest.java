@@ -329,4 +329,18 @@ class ProblemRejudgeTest extends PostgresTest {
         verify(admission).admitUpTo(3);
         verify(admission).release(1);
     }
+
+    @Test
+    void aSourceTheJudgeNoLongerAcceptsIsLeftOutAndGivesItsSlotBack() {
+        List<UUID> ids = insert(AC, WA, AC);
+        jdbc.update("UPDATE t_submissions SET source_code = ? WHERE id = ?", "#include </etc/passwd>", ids.get(1));
+        when(problemCatalog.judgeSpec(slug, true)).thenReturn(new JudgeSpec(problemId, slug, 2000, 128L, "newhash123"));
+
+        assertThat(rejudgeService.rejudgeProblem(slug, null).queued()).isEqualTo(2);
+
+        assertRequeued(ids.get(0));
+        assertRequeued(ids.get(2));
+        assertUntouched(ids.get(1), WA);
+        verify(admission).release(1);
+    }
 }

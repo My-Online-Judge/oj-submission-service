@@ -62,7 +62,7 @@ class SubmissionSchemaTest {
     @Test
     void submissionDbHoldsTheFourSubmissionTablesAndTheLanguages() {
         assertThat(jdbc.queryForList("SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank",
-                String.class)).containsExactly("1", "2", "3", "4", "5", "6", "7", "8");
+                String.class)).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9");
         assertThat(jdbc.queryForList("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' "
                 + "ORDER BY table_name", String.class))
                 .containsExactly("flyway_schema_history", "t_judge_servers", "t_languages", "t_outbox", "t_submissions");
@@ -117,5 +117,14 @@ class SubmissionSchemaTest {
                 String.class))
                 .contains("ON public.t_submissions USING btree (contest_id, user_id)")
                 .contains("WHERE (contest_id IS NOT NULL)");
+    }
+
+    @Test
+    void javaRunsUnderTheSecurityManagerAndTheMountedPolicy() {
+        assertThat(jdbc.queryForObject("SELECT run_command FROM t_languages WHERE identifier = 'java'", String.class))
+                .as("no seccomp rule fits the JVM, so this is what stops a Java program starting processes")
+                .contains("-Djava.security.manager")
+                .contains("-Djava.security.policy==/opt/oj/java.policy")
+                .endsWith(" Main");
     }
 }

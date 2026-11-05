@@ -53,23 +53,23 @@ class SubmissionReconcileJobTest {
                 Duration.ofMinutes(3), Duration.ofMinutes(30), Duration.ofMinutes(5));
     }
 
-    /** A practice row (no contest) one of the rules failed. */
-    private static TimedOut timedOut(boolean rejudge) {
-        return new TimedOut(UUID.randomUUID(), UUID.randomUUID(), rejudge, UUID.randomUUID(), null,
+    /** A practice row (no contest) of generation {@code rejudgeCount} one of the rules failed. */
+    private static TimedOut timedOut(int rejudgeCount) {
+        return new TimedOut(UUID.randomUUID(), UUID.randomUUID(), rejudgeCount, UUID.randomUUID(), null,
                 LocalDateTime.parse("2026-10-19T09:00"));
     }
 
     /** The event the reconcile job must announce for a row it failed. */
     private static SubmissionVerdictRecorded systemError(TimedOut t) {
-        return new SubmissionVerdictRecorded(t.id(), t.problemId(), 5, t.rejudge(), t.userId(), t.contestId(),
-                t.createdAt().atZone(ZoneId.systemDefault()).toInstant());
+        return new SubmissionVerdictRecorded(t.id(), t.problemId(), 5, t.rejudgeCount() > 0, t.userId(),
+                t.contestId(), t.createdAt().atZone(ZoneId.systemDefault()).toInstant(), t.rejudgeCount());
     }
 
     @Test
     void eachTimedOutRowGetsOneEventAndOnePush() {
-        TimedOut judging1 = timedOut(false);
-        TimedOut judging2 = timedOut(true);
-        TimedOut pending = timedOut(false);
+        TimedOut judging1 = timedOut(0);
+        TimedOut judging2 = timedOut(2);
+        TimedOut pending = timedOut(0);
         when(timeouts.failJudgingStartedBefore(any(), any())).thenReturn(List.of(judging1, judging2));
         when(timeouts.failPendingCreatedBefore(any(), any(), any())).thenReturn(List.of(pending));
         List<Boolean> appendedInATransaction = new ArrayList<>();
@@ -102,7 +102,7 @@ class SubmissionReconcileJobTest {
             TimeZone.setDefault(TimeZone.getTimeZone("Asia/Ho_Chi_Minh"));
             UUID userId = UUID.randomUUID();
             UUID contestId = UUID.randomUUID();
-            TimedOut judging = new TimedOut(UUID.randomUUID(), UUID.randomUUID(), false, userId, contestId,
+            TimedOut judging = new TimedOut(UUID.randomUUID(), UUID.randomUUID(), 0, userId, contestId,
                     LocalDateTime.parse("2026-10-19T10:00"));
             when(timeouts.failJudgingStartedBefore(any(), any())).thenReturn(List.of(judging));
             when(timeouts.failPendingCreatedBefore(any(), any(), any())).thenReturn(List.of());
@@ -114,7 +114,7 @@ class SubmissionReconcileJobTest {
                     envelope.capture());
             assertThat(((EventEnvelope<?>) envelope.getValue()).payload()).isEqualTo(new SubmissionVerdictRecorded(
                     judging.id(), judging.problemId(), 5, false, userId, contestId,
-                    Instant.parse("2026-10-19T03:00:00Z")));
+                    Instant.parse("2026-10-19T03:00:00Z"), 0));
         } finally {
             TimeZone.setDefault(before);
         }

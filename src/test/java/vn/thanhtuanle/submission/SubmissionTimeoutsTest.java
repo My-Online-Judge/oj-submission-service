@@ -97,9 +97,9 @@ class SubmissionTimeoutsTest extends PostgresTest {
     }
 
     /** What a rule returns for the row, read back from the table. */
-    private TimedOut timedOut(UUID id, boolean rejudge) {
+    private TimedOut timedOut(UUID id, int rejudgeCount) {
         return jdbc.queryForObject("SELECT problem_id, user_id, contest_id, created_at FROM t_submissions WHERE id = ?",
-                (rs, rowNum) -> new TimedOut(id, rs.getObject("problem_id", UUID.class), rejudge,
+                (rs, rowNum) -> new TimedOut(id, rs.getObject("problem_id", UUID.class), rejudgeCount,
                         rs.getObject("user_id", UUID.class), rs.getObject("contest_id", UUID.class),
                         rs.getObject("created_at", LocalDateTime.class)), id);
     }
@@ -118,7 +118,7 @@ class SubmissionTimeoutsTest extends PostgresTest {
 
         List<TimedOut> timedOut = timeouts.failJudgingStartedBefore(JUDGING_THRESHOLD, NOW);
 
-        assertThat(timedOut).containsExactly(timedOut(id, false));
+        assertThat(timedOut).containsExactly(timedOut(id, 0));
         Map<String, Object> row = row(id);
         assertThat(row.get("status")).isEqualTo(SubmissionResult.SYSTEM_ERROR.getValue());
         assertThat(row.get("error_message")).isEqualTo("Judging timed out");
@@ -175,7 +175,7 @@ class SubmissionTimeoutsTest extends PostgresTest {
 
         List<TimedOut> timedOut = timeouts.failPendingCreatedBefore(PENDING_THRESHOLD, NOW, PROGRESS_SINCE);
 
-        assertThat(timedOut).containsExactly(timedOut(id, false));
+        assertThat(timedOut).containsExactly(timedOut(id, 0));
         Map<String, Object> row = row(id);
         assertThat(row.get("status")).isEqualTo(SubmissionResult.SYSTEM_ERROR.getValue());
         assertThat(row.get("error_message")).isEqualTo("Judging request lost");
@@ -272,16 +272,16 @@ class SubmissionTimeoutsTest extends PostgresTest {
     }
 
     @Test
-    void aRejudgedRowIsReturnedWithRejudgeTrue() {
+    void aRejudgedRowIsReturnedWithItsGeneration() {
         // started 6 min ago: past the 3 min judging threshold, outside the 5 min window the pending rule reads as progress
         UUID judging = submission(JUDGING, NOW.minusHours(2), NOW.minusMinutes(6), 2);
         UUID pending = submission(PENDING, NOW.minusHours(2), null, 1);
         request(pending, NOW.minusMinutes(31));
 
         assertThat(timeouts.failJudgingStartedBefore(JUDGING_THRESHOLD, NOW))
-                .containsExactly(timedOut(judging, true));
+                .containsExactly(timedOut(judging, 2));
         assertThat(timeouts.failPendingCreatedBefore(PENDING_THRESHOLD, NOW, PROGRESS_SINCE))
-                .containsExactly(timedOut(pending, true));
+                .containsExactly(timedOut(pending, 1));
     }
 
     @Test
@@ -292,9 +292,9 @@ class SubmissionTimeoutsTest extends PostgresTest {
         UUID pending = submission(PENDING, NOW.minusMinutes(40), null, 0, userId, contestId);
 
         assertThat(timeouts.failJudgingStartedBefore(JUDGING_THRESHOLD, NOW)).containsExactly(
-                new TimedOut(judging, problemId(judging), false, userId, contestId, NOW.minusMinutes(10)));
+                new TimedOut(judging, problemId(judging), 0, userId, contestId, NOW.minusMinutes(10)));
         assertThat(timeouts.failPendingCreatedBefore(PENDING_THRESHOLD, NOW, PROGRESS_SINCE)).containsExactly(
-                new TimedOut(pending, problemId(pending), false, userId, contestId, NOW.minusMinutes(40)));
+                new TimedOut(pending, problemId(pending), 0, userId, contestId, NOW.minusMinutes(40)));
     }
 
     @Test

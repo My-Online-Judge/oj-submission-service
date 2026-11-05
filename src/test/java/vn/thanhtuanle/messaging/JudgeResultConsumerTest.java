@@ -59,10 +59,10 @@ class JudgeResultConsumerTest {
         return s;
     }
 
-    /** The event announcing the row's verdict: its submitter, its contest and when it was submitted. */
+    /** The event announcing the row's verdict: its submitter, its contest, when it was submitted and its generation. */
     private static SubmissionVerdictRecorded recorded(Submission s, int verdict, boolean rejudge) {
         return new SubmissionVerdictRecorded(s.getId(), s.getProblemId(), verdict, rejudge, s.getUserId(),
-                s.getContestId(), s.getCreatedAt().atZone(ZoneId.systemDefault()).toInstant());
+                s.getContestId(), s.getCreatedAt().atZone(ZoneId.systemDefault()).toInstant(), s.getRejudgeCount());
     }
 
     private void oneRowUpdated(UUID id, Submission reread) {
@@ -144,7 +144,7 @@ class JudgeResultConsumerTest {
     }
 
     @Test
-    void aRejudgedSubmissionsVerdictCarriesRejudgeTrue() {
+    void aRejudgedSubmissionsVerdictCarriesRejudgeTrueAndItsGeneration() {
         UUID id = UUID.randomUUID();
         Submission s = written(id, -1, 1);
         oneRowUpdated(id, s);
@@ -155,7 +155,8 @@ class JudgeResultConsumerTest {
 
         verify(outboxWriter).append(eq("oj.submission.events"), eq(s.getProblemId().toString()),
                 argThat(envelope -> envelope instanceof EventEnvelope<?> sent
-                        && sent.payload().equals(recorded(s, -1, true))));
+                        && sent.payload().equals(recorded(s, -1, true))
+                        && ((SubmissionVerdictRecorded) sent.payload()).rejudgeCount() == 1));
         verify(ojMetrics).recordVerdict(-1, s.getCreatedAt(), true);
     }
 

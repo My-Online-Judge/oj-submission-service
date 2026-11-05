@@ -19,7 +19,9 @@ calls use mutual TLS: this service's certificate (CN `submission-service`) repla
 
 Events: `submission.requested` (to the workers) and `oj.submission.events` (`SubmissionVerdictRecorded`, to
 problem-service's statistics) leave through `t_outbox`; alert `OutboxBacklogStale` fires when a row waits over a
-minute.
+minute. Every `SubmissionVerdictRecorded`, the reconcile job's SYSTEM_ERROR included, carries the submission's
+generation (`rejudgeCount`, oj-common 0.10.0) the verdict was stored under: the relay's passes can send two verdicts
+of one submission out of order, and problem-service keeps the newer one by it.
 
 ## Build and test
 

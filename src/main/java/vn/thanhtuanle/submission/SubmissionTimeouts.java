@@ -28,14 +28,21 @@ public class SubmissionTimeouts {
     public static final String REQUEST_LOST = "Judging request lost";
 
     /**
-     * A submission one of the rules failed; {@code rejudge} when it had been rejudged. It carries what its verdict
-     * event announces: the submitter, the contest (null for practice) and when it was submitted.
+     * A submission one of the rules failed, with its generation ({@code rejudge_count}: 0 unless it had been rejudged).
+     * It carries what its verdict event announces: the generation, the submitter, the contest (null for practice) and
+     * when it was submitted.
      */
-    public record TimedOut(UUID id, UUID problemId, boolean rejudge, UUID userId, UUID contestId,
-                           LocalDateTime createdAt) {}
+    public record TimedOut(UUID id, UUID problemId, int rejudgeCount, UUID userId, UUID contestId,
+                           LocalDateTime createdAt) {
+
+        /** It had been rejudged: its SYSTEM_ERROR replaces an earlier verdict. */
+        public boolean rejudge() {
+            return rejudgeCount > 0;
+        }
+    }
 
     private static final RowMapper<TimedOut> TIMED_OUT = (rs, rowNum) -> new TimedOut(
-            rs.getObject("id", UUID.class), rs.getObject("problem_id", UUID.class), rs.getBoolean("rejudge"),
+            rs.getObject("id", UUID.class), rs.getObject("problem_id", UUID.class), rs.getInt("rejudge_count"),
             rs.getObject("user_id", UUID.class), rs.getObject("contest_id", UUID.class),
             rs.getObject("created_at", LocalDateTime.class));
 
@@ -49,7 +56,7 @@ public class SubmissionTimeouts {
         return jdbc.query("""
                 UPDATE t_submissions SET status = 5, error_message = :message, updated_at = :now
                 WHERE status = 7 AND COALESCE(judging_started_at, updated_at) < :threshold
-                RETURNING id, problem_id, rejudge_count > 0 AS rejudge, user_id, contest_id, created_at
+                RETURNING id, problem_id, rejudge_count, user_id, contest_id, created_at
                 """, params(JUDGING_TIMED_OUT, threshold, now), TIMED_OUT);
     }
 
@@ -77,7 +84,7 @@ public class SubmissionTimeouts {
                   AND NOT EXISTS (SELECT 1 FROM t_submissions p
                                   WHERE p.judging_started_at >= :progressSince AND p.judging_started_at <= :now
                                     AND p.created_at < s.created_at)
-                RETURNING s.id, s.problem_id, s.rejudge_count > 0 AS rejudge, s.user_id, s.contest_id, s.created_at
+                RETURNING s.id, s.problem_id, s.rejudge_count, s.user_id, s.contest_id, s.created_at
                 """, params(REQUEST_LOST, threshold, now).addValue("requestTopic", KafkaTopics.SUBMISSION_REQUESTED)
                         .addValue("progressSince", progressSince),
                 TIMED_OUT);

@@ -62,11 +62,12 @@ class SubmissionSchemaTest {
     @Test
     void submissionDbHoldsTheFourSubmissionTablesAndTheLanguages() {
         assertThat(jdbc.queryForList("SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank",
-                String.class)).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10");
+                String.class)).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11");
         assertThat(jdbc.queryForList("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' "
                 + "ORDER BY table_name", String.class))
                 .containsExactly("flyway_schema_history", "t_judge_servers", "t_languages", "t_outbox", "t_submissions");
         assertThat(jdbc.queryForObject("SELECT count(*) FROM t_languages", Integer.class)).isEqualTo(8);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM t_languages WHERE is_disabled", Integer.class)).isZero();
         assertThat(jdbc.queryForMap("SELECT compile_command, exe_name FROM t_languages WHERE identifier = 'python3'"))
                 .containsEntry("exe_name", "solution.pyc")
                 .containsEntry("compile_command",
@@ -86,7 +87,7 @@ class SubmissionSchemaTest {
     @Test
     void onlyLanguagesTheSandboxCanJudgeAreOffered_withLimitsTheyCompileWithin() {
         assertThat(jdbc.queryForList("SELECT identifier FROM t_languages WHERE NOT is_disabled ORDER BY identifier",
-                String.class)).containsExactly("c", "cpp", "go", "java", "python2", "python3");
+                String.class)).containsExactly("c", "cpp", "go", "java", "javascript", "php", "python2", "python3");
         assertThat(jdbc.queryForMap("SELECT seccomp_rule, compile_max_memory FROM t_languages WHERE identifier = 'cpp'"))
                 .containsEntry("seccomp_rule", "c_cpp").containsEntry("compile_max_memory", 1073741824L);
         assertThat(jdbc.queryForObject("SELECT compile_max_memory FROM t_languages WHERE identifier = 'go'", Long.class))

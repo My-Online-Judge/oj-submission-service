@@ -62,11 +62,15 @@ class SubmissionSchemaTest {
     @Test
     void submissionDbHoldsTheFourSubmissionTablesAndTheLanguages() {
         assertThat(jdbc.queryForList("SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank",
-                String.class)).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9");
+                String.class)).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10");
         assertThat(jdbc.queryForList("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' "
                 + "ORDER BY table_name", String.class))
                 .containsExactly("flyway_schema_history", "t_judge_servers", "t_languages", "t_outbox", "t_submissions");
         assertThat(jdbc.queryForObject("SELECT count(*) FROM t_languages", Integer.class)).isEqualTo(8);
+        assertThat(jdbc.queryForMap("SELECT compile_command, exe_name FROM t_languages WHERE identifier = 'python3'"))
+                .containsEntry("exe_name", "solution.pyc")
+                .containsEntry("compile_command",
+                        "/usr/bin/python3 -c __import__('py_compile').compile('{src_path}',cfile='{exe_path}',doraise=True)");
     }
 
     @Test

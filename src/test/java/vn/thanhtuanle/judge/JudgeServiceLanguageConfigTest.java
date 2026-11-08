@@ -30,6 +30,16 @@ class JudgeServiceLanguageConfigTest {
     }
 
     @Test
+    void javascript_isOnlyMemoryChecked_andCppIsRlimited() {
+        assertThat(configFor("javascript").getRun().getMemoryLimitCheckOnly())
+                .as("Node reserves far more address space than it uses, so RLIMIT_AS at 2x the limit hangs it")
+                .isEqualTo(1);
+        assertThat(configFor("cpp").getRun().getMemoryLimitCheckOnly())
+                .as("a language without a large reservation keeps the enforced rlimit")
+                .isZero();
+    }
+
+    @Test
     void c_compilesWithAnEmptyEnv_andIsRlimited() {
         JudgeLanguageConfigDto config = configFor("c");
 

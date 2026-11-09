@@ -9,8 +9,6 @@ import org.springframework.data.redis.connection.Message;
 import org.springframework.data.redis.connection.MessageListener;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 import vn.thanhtuanle.submission.VerdictPush;
 
 /**
@@ -67,8 +65,8 @@ public class VerdictPubSub implements MessageListener {
 
     /**
      * Publish a verdict only AFTER the caller's transaction commits — or immediately when no
-     * transaction synchronization is active (direct calls, unit tests). Publishing mid-transaction
-     * opens a lost-verdict window: a subscriber's fresh status re-read
+     * transaction synchronization is active (direct calls, unit tests), see {@link AfterCommit}.
+     * Publishing mid-transaction opens a lost-verdict window: a subscriber's fresh status re-read
      * ({@code SubmissionService.streamVerdict}) can still see the row as uncommitted-PENDING while
      * the live publish has already passed its emitter by. Post-commit, a subscriber either
      * registered before the publish (receives it live) or re-reads after the commit (sees the
@@ -78,16 +76,7 @@ public class VerdictPubSub implements MessageListener {
      * convention or review.
      */
     public void publishAfterCommit(String submissionId) {
-        if (TransactionSynchronizationManager.isSynchronizationActive()) {
-            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                @Override
-                public void afterCommit() {
-                    publish(submissionId);
-                }
-            });
-        } else {
-            publish(submissionId);
-        }
+        AfterCommit.run(() -> publish(submissionId));
     }
 
     @Override

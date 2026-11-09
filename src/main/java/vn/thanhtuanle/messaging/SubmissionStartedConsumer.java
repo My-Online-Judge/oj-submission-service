@@ -14,7 +14,8 @@ import java.time.ZoneId;
 import java.util.UUID;
 
 /**
- * Applies judge-worker's {@code submission.started}: the submission is JUDGING from the worker's start time. A start
+ * Applies judge-worker's {@code submission.started}: the submission is JUDGING from the worker's start time, and the
+ * SSE subscribers hear it ({@link JudgingPubSub}, after the commit) so the console moves off "waiting" live. A start
  * is advisory, so one this service cannot use is logged and skipped, never thrown.
  *
  * <p>Uses Boot's listener container factory (and so the {@code tls} profile's Kafka SSL bundle and the shared error
@@ -26,6 +27,7 @@ import java.util.UUID;
 public class SubmissionStartedConsumer {
 
     private final SubmissionRepository submissionRepository;
+    private final JudgingPubSub judgingPubSub;
 
     @KafkaListener(topics = KafkaTopics.SUBMISSION_STARTED, groupId = KafkaTopics.SUBMISSION_STARTED_GROUP,
             properties = "spring.json.value.default.type=vn.thanhtuanle.messaging.event.SubmissionStartedEvent")
@@ -57,6 +59,9 @@ public class SubmissionStartedConsumer {
             int updated = generation == null
                     ? submissionRepository.applyStarted(id, startedAt, now)
                     : submissionRepository.applyStartedOfGeneration(id, startedAt, now, generation);
+            if (updated > 0) {
+                judgingPubSub.publishStartedAfterCommit(event.submissionId());
+            }
             // The row generation costs a query: look it up only when the line is written.
             if (updated == 0 && log.isDebugEnabled()) {
                 log.debug("Ignoring the start of a finished, unknown or since rejudged submission {} "

@@ -202,4 +202,53 @@ class SubmissionSseRegistryTest {
         registry.onDone("c", mock(SseEmitter.class));
         assertThat(registry.size()).isEqualTo(1);
     }
+
+    @Test
+    void sendReachesEveryStreamOfTheSubmissionAndLeavesThemOpen() throws Exception {
+        SubmissionSseRegistry registry = new SubmissionSseRegistry();
+        SseEmitter a = mock(SseEmitter.class);
+        SseEmitter b = mock(SseEmitter.class);
+        SseEmitter other = mock(SseEmitter.class);
+        registry.register("s1", a, null);
+        registry.register("s1", b, null);
+        registry.register("s2", other, null);
+
+        registry.send("s1", "progress", java.util.Map.of("testCase", "1"));
+
+        verify(a).send(any(SseEmitter.SseEventBuilder.class));
+        verify(b).send(any(SseEmitter.SseEventBuilder.class));
+        verify(other, never()).send(any(SseEmitter.SseEventBuilder.class));
+        verify(a, never()).complete();
+        verify(b, never()).complete();
+        assertThat(registry.holds("s1")).isTrue();
+        assertThat(registry.size()).isEqualTo(3);
+    }
+
+    @Test
+    void sendToASubmissionNobodyWatchesIsANoOp() {
+        SubmissionSseRegistry registry = new SubmissionSseRegistry();
+        assertThatCode(() -> registry.send("nope", "started", java.util.Map.of("status", 7))).doesNotThrowAnyException();
+    }
+
+    @Test
+    void aStreamThatRefusesAnEventIsDroppedAndTheOthersStillGetIt() throws Exception {
+        SubmissionSseRegistry registry = new SubmissionSseRegistry();
+        SseEmitter gone = mock(SseEmitter.class);
+        SseEmitter live = mock(SseEmitter.class);
+        doThrow(new IllegalStateException("already completed")).when(gone).send(any(SseEmitter.SseEventBuilder.class));
+        registry.register("s1", gone, null);
+        registry.register("s1", live, null);
+
+        assertThatCode(() -> registry.send("s1", "progress", java.util.Map.of("testCase", "1"))).doesNotThrowAnyException();
+
+        verify(gone).completeWithError(any(IllegalStateException.class));
+        verify(live).send(any(SseEmitter.SseEventBuilder.class));
+        assertThat(registry.holds("s1")).isTrue();
+        assertThat(registry.size()).isEqualTo(1);
+
+        // The verdict still completes the live one.
+        registry.complete("s1", verdict());
+        verify(live).complete();
+        assertThat(registry.size()).isZero();
+    }
 }

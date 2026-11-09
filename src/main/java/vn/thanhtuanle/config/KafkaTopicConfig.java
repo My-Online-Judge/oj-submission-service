@@ -61,6 +61,15 @@ public class KafkaTopicConfig {
                 .build();
     }
 
+    // judge-worker's per-case progress while judging, keyed by submissionId.
+    @Bean
+    public NewTopic submissionProgressTopic() {
+        return TopicBuilder.name(KafkaTopics.SUBMISSION_PROGRESS)
+                .partitions(partitions)
+                .replicas(1)
+                .build();
+    }
+
     @Bean
     public NewTopic submissionJudgedDlqTopic() {
         return TopicBuilder.name(KafkaTopics.SUBMISSION_JUDGED_DLQ)

@@ -23,6 +23,15 @@ minute. Every `SubmissionVerdictRecorded`, the reconcile job's SYSTEM_ERROR incl
 generation (`rejudgeCount`, oj-common 0.10.0) the verdict was stored under: the relay's passes can send two verdicts
 of one submission out of order, and problem-service keeps the newer one by it.
 
+Live stream (`GET /api/v1/submissions/{id}/stream`, SSE): while a submission is judged the stream carries a `started`
+event (`{"status": 7}`, from the worker's `submission.started`, consumer group `submission-started`; also sent at
+subscribe time when the row is already JUDGING) and one `progress` event per judged case (`{testCase, result, error,
+cpuTime, realTime, memory, total}`, from the worker's `submission.progress`, group `submission-progress`; never the
+program's output), then the single `verdict` event with the full `SubmissionResponseDto`, and completes. Starts and
+progress are advisory: they are not stored, they are fanned out across instances over the Redis channel `oj.judging`
+(the verdict over `oj.verdicts`), and a lost one leaves only a gap the verdict fills. A record of either topic the
+consumer gives up on is dropped, not dead-lettered.
+
 ## Build and test
 
 `oj-common` must be installed first (`./mvnw install` in the sibling `oj-common` repo). Use `./mvnw`

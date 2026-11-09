@@ -27,6 +27,7 @@ import vn.thanhtuanle.entity.Language;
 import vn.thanhtuanle.entity.Submission;
 import vn.thanhtuanle.judge.CheckerLanguages;
 import vn.thanhtuanle.judge.JudgeService;
+import vn.thanhtuanle.messaging.JudgingPubSub;
 import vn.thanhtuanle.messaging.KafkaTopics;
 import vn.thanhtuanle.messaging.event.SubmissionRequestedEvent;
 import vn.thanhtuanle.messaging.outbox.OutboxWriter;
@@ -219,6 +220,11 @@ public class SubmissionService {
                             id, replay.getStatus());
                     sseRegistry.complete(id, submissionMapper.toDto(replay, detailAssembler.assemble(replay)));
                 });
+            } else if (freshStatus != null && freshStatus == SubmissionResult.JUDGING.getValue()) {
+                // The worker's start may have been broadcast before this stream existed (JudgingPubSub): the
+                // subscriber learns it is judging now rather than waiting for the first case or the verdict. The
+                // cases already judged are not replayed; the ladder fills from the next ones and the verdict.
+                sseRegistry.send(id, JudgingPubSub.EVENT_STARTED, Map.of("status", freshStatus));
             }
         } catch (RuntimeException | Error e) {
             // The handler fails, so Spring never starts the emitter and none of its callbacks fire: free its slot here.

@@ -29,8 +29,8 @@ import vn.thanhtuanle.messaging.KafkaTopics;
  * retried with a growing pause, {@link #verdictBackOff()}: a brief outage must not lose a verdict. A verdict given up
  * on is republished to {@link KafkaTopics#SUBMISSION_JUDGED_DLQ}, on its partition, for inspection and replay, and
  * then increments {@code oj_verdict_dead_lettered_total} (alert VerdictDeadLettered); the container seeks past it.
- * A {@code submission.started} record given up on is dropped with a WARN: a start is advisory, the verdict or the
- * reconcile job still finishes the submission.
+ * A {@code submission.started} or {@code submission.progress} record given up on is dropped with a WARN: both are
+ * advisory, the verdict or the reconcile job still finishes the submission.
  *
  * <p>The pause runs on the consumer thread before the record is fetched again, so the time between two polls is the
  * listener's run plus at most 30 s: well inside the consumer's {@code max.poll.interval.ms} (default 300 s), so the
@@ -48,11 +48,15 @@ public class KafkaConsumerConfig {
         return backOff;
     }
 
-    /** Drops a {@code submission.started} record; dead-letters any other record and counts it once published. */
+    /**
+     * Drops a {@code submission.started} or {@code submission.progress} record; dead-letters any other record and
+     * counts it once published.
+     */
     static ConsumerRecordRecoverer verdictRecoverer(ConsumerRecordRecoverer deadLetters, Counter deadLettered) {
         return (record, ex) -> {
-            if (KafkaTopics.SUBMISSION_STARTED.equals(record.topic())) {
-                log.warn("Dropping submission.started record {}@{} (key {}): {}", record.partition(), record.offset(),
+            if (KafkaTopics.SUBMISSION_STARTED.equals(record.topic())
+                    || KafkaTopics.SUBMISSION_PROGRESS.equals(record.topic())) {
+                log.warn("Dropping {} record {}@{} (key {}): {}", record.topic(), record.partition(), record.offset(),
                         record.key(), NestedExceptionUtils.getMostSpecificCause(ex).getMessage());
                 return;
             }

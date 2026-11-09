@@ -10,6 +10,10 @@ public final class KafkaTopics {
     // judge-worker announces each judging start here, keyed by submissionId.
     public static final String SUBMISSION_STARTED = "submission.started";
     public static final String SUBMISSION_STARTED_GROUP = "submission-started";
+    // judge-worker reports each judged case of a submission here while it is judged (JudgeStream), keyed by
+    // submissionId. Advisory like the starts: fanned out to the SSE subscribers, never stored.
+    public static final String SUBMISSION_PROGRESS = "submission.progress";
+    public static final String SUBMISSION_PROGRESS_GROUP = "submission-progress";
     // The Run lane (Run code design §7): requests with inline test cases, keyed by runId, judged by the run-workers;
     // their replies, read by this service's run-results group. Nothing on either topic names a submission.
     public static final String RUN_REQUESTED = "run.requested";

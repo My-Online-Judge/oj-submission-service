@@ -120,6 +120,23 @@ class SubmissionServiceStreamTest {
         verify(submissionRepository, never()).findWithLanguageById(any());
         verify(sseRegistry, never()).complete(any(), any());
         verify(submissionMapper, never()).toDto(any(Submission.class));
+        // ... but the subscriber hears that judging is under way, in case the worker's start was broadcast before
+        // this stream existed.
+        verify(sseRegistry).send(id.toString(), "started", java.util.Map.of("status", SubmissionResult.JUDGING.getValue()));
+    }
+
+    @Test
+    void streamVerdict_whenPending_sendsNoStartedEvent() {
+        UUID id = UUID.randomUUID();
+        UUID ownerId = UUID.randomUUID();
+        when(submissionRepository.findById(id)).thenReturn(Optional.of(submission(id, ownerId, SubmissionResult.PENDING)));
+        when(submissionRepository.findStatusById(id)).thenReturn(SubmissionResult.PENDING.getValue());
+        when(currentUser.id()).thenReturn(ownerId);
+        when(sseRegistry.subscribe(id.toString(), ownerId)).thenReturn(new SseEmitter());
+
+        submissionService.streamVerdict(id.toString());
+
+        verify(sseRegistry, never()).send(any(), any(), any());
     }
 
     @Test

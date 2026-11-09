@@ -52,4 +52,19 @@ class KafkaConsumerConfigTest {
         assertThat(published).containsExactly(verdict);
         assertThat(deadLettered.count()).isEqualTo(1.0);
     }
+
+    @Test
+    void aStartOrAProgressRecordGivenUpOnIsDroppedNotDeadLettered() {
+        Counter deadLettered = new SimpleMeterRegistry().counter("oj.verdict.dead.lettered");
+        List<ConsumerRecord<?, ?>> published = new ArrayList<>();
+        ConsumerRecordRecoverer recoverer = KafkaConsumerConfig.verdictRecoverer((record, ex) -> published.add(record),
+                deadLettered);
+
+        for (String topic : List.of(KafkaTopics.SUBMISSION_STARTED, KafkaTopics.SUBMISSION_PROGRESS)) {
+            recoverer.accept(new ConsumerRecord<>(topic, 0, 1L, "k", "not json"), new RuntimeException("poison"));
+        }
+
+        assertThat(published).isEmpty();
+        assertThat(deadLettered.count()).isZero();
+    }
 }

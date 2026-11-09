@@ -27,9 +27,11 @@ public class JudgeService {
     /**
      * Languages whose runtime reserves a large virtual-memory space (so a hard memory rlimit
      * would kill them before user code runs). For these, judge_server only *checks* memory
-     * usage instead of enforcing it via rlimit. Mirrors QingdaoU's per-language config.
+     * usage instead of enforcing it via rlimit. Mirrors QingdaoU's per-language config. Node reserves far more
+     * address space than it uses, so RLIMIT_AS at 2x the limit hangs it; the sandbox reports memory and the
+     * container cap bounds it.
      */
-    private static final List<String> MEMORY_CHECK_ONLY_LANGUAGES = List.of("java", "go");
+    private static final List<String> MEMORY_CHECK_ONLY_LANGUAGES = List.of("java", "go", "javascript");
 
     /**
      * Per-language environment on top of judge-server's own (it adds PATH to the compiler's, nothing else),

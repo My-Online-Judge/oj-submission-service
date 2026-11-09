@@ -22,7 +22,8 @@ import java.util.concurrent.atomic.AtomicInteger;
  * <p>Deliberately instance-local: it only holds emitters for connections terminated by THIS
  * instance. Cross-instance delivery is handled upstream by {@code VerdictPubSub}, which broadcasts
  * every verdict over Redis so each instance calls {@link #complete} — a no-op on instances that
- * don't hold the emitter.
+ * don't hold the emitter — and by {@code JudgingPubSub}, whose starts and per-case progress reach
+ * {@link #send} the same way while the stream stays open.
  */
 @Component
 @Slf4j
@@ -142,6 +143,31 @@ public class SubmissionSseRegistry {
     /** Number of live emitters held by this instance. */
     int size() {
         return total.get();
+    }
+
+    /**
+     * Sends a named, non-terminal event ({@code started}, {@code progress}) to every stream this instance holds for the
+     * submission, leaving them open for the verdict. An emitter whose client is gone is completed with the error and
+     * forgotten; the others still get the event. A no-op for an id nobody watches.
+     */
+    public void send(String submissionId, String eventName, Object data) {
+        Deque<SseEmitter> subscribers = emitters.get(submissionId);
+        if (subscribers == null) {
+            return;
+        }
+        for (SseEmitter emitter : List.copyOf(subscribers)) {
+            try {
+                emitter.send(SseEmitter.event().name(eventName).data(data));
+            } catch (Exception e) {
+                log.debug("Dropping the SSE stream of {} that refused a {} event", submissionId, eventName, e);
+                onDone(submissionId, emitter);
+                try {
+                    emitter.completeWithError(e);
+                } catch (Exception ignored) {
+                    // already completed or the connection is gone; the emitter is out of the map
+                }
+            }
+        }
     }
 
     public void complete(String submissionId, SubmissionResponseDto payload) {
